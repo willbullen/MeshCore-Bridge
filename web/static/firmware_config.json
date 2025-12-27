@@ -1,0 +1,109 @@
+{
+  "devices": [
+    {
+      "id": "rak4631",
+      "name": "RAK WisBlock 4631",
+      "type": "nrf52",
+      "image": "/static/img/devices/rak_4631.png",
+      "description": "Nordic nRF52840 + SX1262 LoRa",
+      "firmwares": [
+        {
+          "id": "companion_ble",
+          "name": "Companion Radio (Bluetooth)",
+          "description": "Chat via mobile phone app or web client",
+          "icon": "fa-bluetooth",
+          "versions": {
+            "latest": {
+              "version": "v6.2",
+              "url": "https://github.com/ripplebiz/MeshCore/releases/download/v6.2/meshcore-rak4631-ble.zip",
+              "notes": "Latest stable release with Bluetooth support"
+            }
+          }
+        },
+        {
+          "id": "companion_usb",
+          "name": "Companion Radio (USB)",
+          "description": "Chat via web client or command line",
+          "icon": "fa-usb",
+          "versions": {
+            "latest": {
+              "version": "v6.2",
+              "url": "https://github.com/ripplebiz/MeshCore/releases/download/v6.2/meshcore-rak4631-usb.zip",
+              "notes": "Latest stable release with USB support"
+            }
+          }
+        },
+        {
+          "id": "repeater",
+          "name": "Repeater",
+          "description": "Special role for routing packets only",
+          "icon": "fa-tower-broadcast",
+          "versions": {
+            "latest": {
+              "version": "v6.2",
+              "url": "https://github.com/ripplebiz/MeshCore/releases/download/v6.2/meshcore-rak4631-repeater.zip",
+              "notes": "Repeater firmware - configure via console"
+            }
+          }
+        },
+        {
+          "id": "room_server",
+          "name": "Room Server",
+          "description": "Local room and routing packets",
+          "icon": "fa-server",
+          "versions": {
+            "latest": {
+              "version": "v6.2",
+              "url": "https://github.com/ripplebiz/MeshCore/releases/download/v6.2/meshcore-rak4631-roomserver.zip",
+              "notes": "Room server firmware - configure via console"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "heltec_v3",
+      "name": "Heltec WiFi LoRa 32 V3",
+      "type": "esp32",
+      "image": "/static/img/devices/heltec_v3.png",
+      "description": "ESP32-S3 + SX1262 LoRa + OLED",
+      "firmwares": [
+        {
+          "id": "gui",
+          "name": "Client GUI",
+          "description": "Full GUI interface with display",
+          "icon": "fa-desktop",
+          "versions": {
+            "latest": {
+              "version": "v6.2",
+              "url": "https://github.com/ripplebiz/MeshCore/releases/download/v6.2/meshcore-heltec-v3.bin",
+              "notes": "Latest GUI firmware for Heltec V3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "lilygo_tdeck",
+      "name": "Lilygo T-Deck",
+      "type": "esp32",
+      "image": "/static/img/devices/lilygo_tdeck.png",
+      "description": "ESP32-S3 + SX1262 LoRa + Keyboard + Display",
+      "firmwares": [
+        {
+          "id": "gui",
+          "name": "Client GUI",
+          "description": "Full GUI with keyboard support",
+          "icon": "fa-keyboard",
+          "versions": {
+            "latest": {
+              "version": "v6.2",
+              "url": "https://github.com/ripplebiz/MeshCore/releases/download/v6.2/meshcore-tdeck.bin",
+              "notes": "Latest GUI firmware for T-Deck"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -18,6 +18,9 @@ urlpatterns = [
     path('connections/', views.connections, name='connections'),
     path('configuration/', views.configuration, name='configuration'),
     
+    # Utilities
+    path('flasher/', views.flasher, name='flasher'),
+    
     # API endpoints
     path('api/status/', views.api_status, name='api_status'),
     path('api/nodes/', views.api_nodes, name='api_nodes'),

@@ -543,6 +543,14 @@
                 </div>
                 
                 <div class="nav-section">
+                    <div class="nav-section-title">Utilities</div>
+                    <a href="{% url 'meshcore:flasher' %}" class="nav-link {% if request.resolver_match.url_name == 'flasher' %}active{% endif %}">
+                        <i class="fas fa-microchip"></i>
+                        <span>Flasher</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
                     <div class="nav-section-title">Settings</div>
                     <a href="{% url 'meshcore:connections' %}" class="nav-link {% if request.resolver_match.url_name == 'connections' %}active{% endif %}">
                         <i class="fas fa-plug"></i>

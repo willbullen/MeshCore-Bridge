@@ -252,3 +252,8 @@ def api_messages(request):
     } for msg in messages]
     
     return JsonResponse({'messages': data})
+
+
+def flasher(request):
+    """Firmware flasher page"""
+    return render(request, 'meshcore/flasher.html')
