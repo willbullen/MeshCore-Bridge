@@ -1,0 +1,484 @@
+{% extends "base.html" %}
+
+{% block title %}Media Gallery - MeshCore{% endblock %}
+
+{% block page_title %}Media Gallery{% endblock %}
+
+{% block header_actions %}
+<button class="btn btn-secondary btn-sm" onclick="document.getElementById('imageUpload').click()">
+    <i class="fas fa-upload"></i>
+    Upload Image
+</button>
+<button class="btn btn-primary btn-sm" onclick="showVoiceRecorder()">
+    <i class="fas fa-microphone"></i>
+    Record Voice
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- Hidden file input -->
+<input type="file" id="imageUpload" accept="image/*" style="display: none;" onchange="uploadImage(this)">
+
+<!-- Filter tabs -->
+<div class="flex gap-2 mb-4">
+    <a href="?status=all" class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-ghost{% endif %}">
+        All
+    </a>
+    <a href="?status=received" class="btn btn-sm {% if status_filter == 'received' %}btn-primary{% else %}btn-ghost{% endif %}">
+        Received
+    </a>
+    <a href="?status=sent" class="btn btn-sm {% if status_filter == 'sent' %}btn-primary{% else %}btn-ghost{% endif %}">
+        Sent
+    </a>
+    <a href="?status=sending" class="btn btn-sm {% if status_filter == 'sending' %}btn-primary{% else %}btn-ghost{% endif %}">
+        In Progress
+    </a>
+</div>
+
+<!-- Images Section -->
+<div class="mb-6">
+    <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+        <i class="fas fa-images"></i>
+        Images
+    </h2>
+    {% if images %}
+    <div class="grid grid-cols-4 gap-3">
+        {% for image in images %}
+        <div class="card card-compact group cursor-pointer" onclick="viewMedia('{{ image.file_id }}')">
+            <div class="media-thumbnail">
+                {% if image.thumbnail %}
+                <img src="{{ image.thumbnail.url }}" alt="{{ image.filename }}">
+                {% elif image.compressed_file %}
+                <img src="{{ image.compressed_file.url }}" alt="{{ image.filename }}">
+                {% elif image.original_file %}
+                <img src="{{ image.original_file.url }}" alt="{{ image.filename }}">
+                {% else %}
+                <div class="media-placeholder">
+                    <i class="fas fa-image fa-2x"></i>
+                </div>
+                {% endif %}
+                <div class="media-overlay">
+                    <span class="badge badge-{{ image.status }}">{{ image.get_status_display }}</span>
+                </div>
+            </div>
+            <div class="p-3">
+                <div class="text-sm font-medium truncate mb-1">{{ image.filename }}</div>
+                <div class="flex items-center justify-between text-xs text-muted">
+                    <span><i class="fas fa-user"></i> {{ image.sender.name|truncatechars:12 }}</span>
+                    <span>{{ image.created_at|date:"M d" }}</span>
+                </div>
+                {% if image.status == 'sending' or image.status == 'receiving' %}
+                <div class="progress-bar-container mt-2">
+                    <div class="progress-bar-fill" style="width: {{ image.progress }}%"></div>
+                </div>
+                <div class="text-xs text-muted text-center mt-1">{{ image.progress }}%</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card text-center py-12">
+        <i class="fas fa-images fa-3x text-muted mb-4"></i>
+        <p class="text-muted mb-4">No images yet</p>
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('imageUpload').click()">
+            <i class="fas fa-upload"></i>
+            Upload First Image
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Voice Messages Section -->
+<div>
+    <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+        <i class="fas fa-microphone"></i>
+        Voice Messages
+    </h2>
+    {% if voice_messages %}
+    <div class="grid gap-2">
+        {% for voice in voice_messages %}
+        <div class="card card-compact flex items-center gap-3 p-3">
+            <div class="voice-icon">
+                <i class="fas fa-microphone fa-lg"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-sm font-medium">{{ voice.sender.name }}</span>
+                    <span class="badge badge-{{ voice.status }}">{{ voice.get_status_display }}</span>
+                </div>
+                <div class="flex items-center gap-3 text-xs text-muted">
+                    <span><i class="fas fa-clock"></i> {{ voice.metadata.duration|floatformat:1 }}s</span>
+                    <span><i class="fas fa-calendar"></i> {{ voice.created_at|date:"M d, H:i" }}</span>
+                </div>
+                {% if voice.status == 'sending' or voice.status == 'receiving' %}
+                <div class="progress-bar-container mt-2">
+                    <div class="progress-bar-fill" style="width: {{ voice.progress }}%"></div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-2">
+                {% if voice.original_file or voice.compressed_file %}
+                <button class="btn btn-ghost btn-sm" onclick="playVoice('{{ voice.file_id }}'); event.stopPropagation();">
+                    <i class="fas fa-play"></i>
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card text-center py-12">
+        <i class="fas fa-microphone fa-3x text-muted mb-4"></i>
+        <p class="text-muted mb-4">No voice messages yet</p>
+        <button class="btn btn-primary btn-sm" onclick="showVoiceRecorder()">
+            <i class="fas fa-microphone"></i>
+            Record First Message
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Voice Recorder Modal -->
+<div id="voiceRecorderModal" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <h3 class="text-lg font-semibold">Record Voice Message</h3>
+            <button class="btn-icon" onclick="closeVoiceRecorder()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="recorder-visual">
+                <div id="recordingIndicator" class="recording-indicator">
+                    <i class="fas fa-microphone fa-3x"></i>
+                </div>
+                <div id="recordingTime" class="recording-time">00:00</div>
+            </div>
+            <div class="flex gap-2 justify-center mt-6">
+                <button id="recordBtn" class="btn btn-primary" onclick="startRecording()">
+                    <i class="fas fa-circle"></i>
+                    Start Recording
+                </button>
+                <button id="stopBtn" class="btn btn-secondary" onclick="stopRecording()" style="display: none;">
+                    <i class="fas fa-stop"></i>
+                    Stop
+                </button>
+                <button id="sendVoiceBtn" class="btn btn-primary" onclick="sendVoice()" style="display: none;">
+                    <i class="fas fa-paper-plane"></i>
+                    Send
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.media-thumbnail {
+    position: relative;
+    width: 100%;
+    height: 160px;
+    background: hsl(var(--secondary));
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.media-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+}
+
+.group:hover .media-thumbnail img {
+    transform: scale(1.05);
+}
+
+.media-placeholder {
+    color: hsl(var(--muted-foreground));
+}
+
+.media-overlay {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+}
+
+.badge-received { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.badge-sent { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.badge-sending { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+.badge-failed { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+.voice-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: hsl(var(--primary) / 0.15);
+    color: hsl(var(--primary));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.progress-bar-container {
+    height: 3px;
+    background: hsl(var(--secondary));
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary) / 0.7));
+    transition: width 0.3s;
+}
+
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.modal-overlay.active {
+    display: flex;
+}
+
+.modal-container {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: calc(var(--radius) + 4px);
+    width: 90%;
+    max-width: 480px;
+    max-height: 90vh;
+    overflow: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem;
+    border-bottom: 1px solid hsl(var(--border));
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.recorder-visual {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.recording-indicator {
+    width: 100px;
+    height: 100px;
+    margin: 0 auto 1rem;
+    border-radius: 50%;
+    background: hsl(var(--secondary));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: hsl(var(--muted-foreground));
+    transition: all 0.3s;
+}
+
+.recording-indicator.active {
+    background: #ef4444;
+    color: white;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.9; }
+}
+
+.recording-time {
+    font-size: 2rem;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    color: hsl(var(--foreground));
+}
+
+.btn-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius);
+    background: transparent;
+    border: none;
+    color: hsl(var(--foreground));
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.btn-icon:hover {
+    background: hsl(var(--accent));
+}
+
+.font-semibold {
+    font-weight: 600;
+}
+
+.truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.min-w-0 {
+    min-width: 0;
+}
+
+.flex-shrink-0 {
+    flex-shrink: 0;
+}
+</style>
+
+<script>
+let mediaRecorder;
+let audioChunks = [];
+let recordingStartTime;
+let recordingInterval;
+
+function uploadImage(input) {
+    if (input.files && input.files[0]) {
+        const formData = new FormData();
+        formData.append('image', input.files[0]);
+        
+        fetch('/meshcore/media/upload/image/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('Upload failed: ' + error);
+        });
+    }
+}
+
+function viewMedia(fileId) {
+    // TODO: Implement media detail view
+    console.log('View media:', fileId);
+}
+
+function showVoiceRecorder() {
+    document.getElementById('voiceRecorderModal').classList.add('active');
+}
+
+function closeVoiceRecorder() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        stopRecording();
+    }
+    document.getElementById('voiceRecorderModal').classList.remove('active');
+    document.getElementById('recordBtn').style.display = 'inline-flex';
+    document.getElementById('stopBtn').style.display = 'none';
+    document.getElementById('sendVoiceBtn').style.display = 'none';
+    document.getElementById('recordingTime').textContent = '00:00';
+}
+
+async function startRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        
+        mediaRecorder.addEventListener('dataavailable', event => {
+            audioChunks.push(event.data);
+        });
+        
+        mediaRecorder.start();
+        recordingStartTime = Date.now();
+        
+        document.getElementById('recordBtn').style.display = 'none';
+        document.getElementById('stopBtn').style.display = 'inline-flex';
+        document.getElementById('recordingIndicator').classList.add('active');
+        
+        recordingInterval = setInterval(updateRecordingTime, 100);
+    } catch (error) {
+        alert('Could not access microphone: ' + error);
+    }
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        
+        clearInterval(recordingInterval);
+        
+        document.getElementById('stopBtn').style.display = 'none';
+        document.getElementById('sendVoiceBtn').style.display = 'inline-flex';
+        document.getElementById('recordingIndicator').classList.remove('active');
+    }
+}
+
+function updateRecordingTime() {
+    const elapsed = Date.now() - recordingStartTime;
+    const seconds = Math.floor(elapsed / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    document.getElementById('recordingTime').textContent = 
+        `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function sendVoice() {
+    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    const duration = (Date.now() - recordingStartTime) / 1000;
+    
+    const formData = new FormData();
+    formData.append('voice', audioBlob, 'voice-message.webm');
+    formData.append('duration', duration);
+    
+    fetch('/meshcore/media/upload/voice/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            closeVoiceRecorder();
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Upload failed: ' + error);
+    });
+}
+
+function playVoice(fileId) {
+    // TODO: Implement voice playback
+    alert('Voice playback coming soon!');
+}
+</script>
+{% endblock %}

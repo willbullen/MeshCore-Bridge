@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}{{ node.name|default:node.node_hash }} - MeshCore Bridge{% endblock %}
+{% block page_title %}{{ node.name|default:node.node_hash }}{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'meshcore:nodes_list' %}" class="btn btn-ghost btn-sm">
+    <i class="fas fa-arrow-left"></i>
+    Back to Nodes
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Node Info Cards -->
+<div class="grid grid-cols-4 mb-6">
+    <div class="stat-card">
+        <div class="stat-label">
+            <span>Status</span>
+            <span class="status-indicator {% if node.is_online %}status-online{% else %}status-offline{% endif %}"></span>
+        </div>
+        <div class="stat-value" style="font-size: 1.25rem;">{% if node.is_online %}Online{% else %}Offline{% endif %}</div>
+        <div class="stat-description">Current status</div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-label">
+            <span>Battery</span>
+            <i class="fas fa-battery-three-quarters text-muted"></i>
+        </div>
+        <div class="stat-value" style="font-size: 1.25rem;">{{ node.battery_level|default:"N/A" }}{% if node.battery_level %}%{% endif %}</div>
+        <div class="stat-description">{% if node.voltage %}{{ node.voltage }}V{% else %}No data{% endif %}</div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-label">
+            <span>Signal (SNR)</span>
+            <i class="fas fa-signal text-muted"></i>
+        </div>
+        <div class="stat-value" style="font-size: 1.25rem;">{{ node.snr|default:"N/A" }}{% if node.snr %} dB{% endif %}</div>
+        <div class="stat-description">Signal quality</div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-label">
+            <span>RSSI</span>
+            <i class="fas fa-broadcast-tower text-muted"></i>
+        </div>
+        <div class="stat-value" style="font-size: 1.25rem;">{{ node.rssi|default:"N/A" }}{% if node.rssi %} dBm{% endif %}</div>
+        <div class="stat-description">Signal strength</div>
+    </div>
+</div>
+
+<!-- Node Details -->
+<div class="grid grid-cols-2 gap-4 mb-6">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Node Information</h3>
+        </div>
+        
+        <div class="grid gap-3">
+            <div>
+                <div class="text-xs text-muted mb-1">Node ID</div>
+                <div class="text-sm">{{ node.node_hash }}</div>
+            </div>
+            
+            <div>
+                <div class="text-xs text-muted mb-1">Hardware Model</div>
+                <div class="text-sm">{{ node.hardware_model|default:"Unknown" }}</div>
+            </div>
+            
+            <div>
+                <div class="text-xs text-muted mb-1">Firmware Version</div>
+                <div class="text-sm">{{ node.firmware_version|default:"Unknown" }}</div>
+            </div>
+            
+            <div>
+                <div class="text-xs text-muted mb-1">Last Seen</div>
+                <div class="text-sm">{% if node.last_seen %}{{ node.last_seen|timesince }} ago{% else %}Never{% endif %}</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Location</h3>
+        </div>
+        
+        <div class="grid gap-3">
+            <div>
+                <div class="text-xs text-muted mb-1">Latitude</div>
+                <div class="text-sm">{{ node.latitude|default:"Not available" }}</div>
+            </div>
+            
+            <div>
+                <div class="text-xs text-muted mb-1">Longitude</div>
+                <div class="text-sm">{{ node.longitude|default:"Not available" }}</div>
+            </div>
+            
+            <div>
+                <div class="text-xs text-muted mb-1">Altitude</div>
+                <div class="text-sm">{% if node.altitude %}{{ node.altitude }}m{% else %}Not available{% endif %}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Messages -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Recent Messages</h3>
+        <p class="card-description">Messages sent from this node</p>
+    </div>
+    
+    <div style="max-height: 400px; overflow-y: auto;">
+        {% for message in sent_messages %}
+        <div style="padding: 0.75rem; border-bottom: 1px solid hsl(var(--border));">
+            <div class="flex items-center justify-between mb-2">
+                <span class="badge badge-secondary">{{ message.message_type }}</span>
+                <span class="text-xs text-muted">{{ message.rx_time|timesince }} ago</span>
+            </div>
+            {% if message.text_content %}
+            <div class="text-sm">{{ message.text_content }}</div>
+            {% endif %}
+            {% if message.to_node %}
+            <div class="text-xs text-muted mt-1">To: {{ message.recipient.name|default:message.recipient.node_hash }}</div>
+            {% endif %}
+        </div>
+        {% empty %}
+        <div style="padding: 2rem; text-align: center;">
+            <div class="text-muted">No messages from this node</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

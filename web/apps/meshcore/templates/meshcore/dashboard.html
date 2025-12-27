@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - MeshCore Bridge{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block header_actions %}
+<button class="btn btn-secondary btn-sm" onclick="location.reload()">
+    <i class="fas fa-sync-alt"></i>
+    Refresh
+</button>
+<button class="btn btn-primary btn-sm" onclick="restartBridge()">
+    <i class="fas fa-power-off"></i>
+    Restart Bridge
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- Status Cards -->
+<div class="grid grid-cols-4 mb-6">
+    <div class="stat-card">
+        <div class="stat-label">
+            <span>Total Nodes</span>
+            <i class="fas fa-sitemap text-muted"></i>
+        </div>
+        <div class="stat-value">{{ total_nodes }}</div>
+        <div class="stat-description">Nodes in mesh network</div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-label">
+            <span>Online Nodes</span>
+            <i class="fas fa-circle-check text-muted"></i>
+        </div>
+        <div class="stat-value">{{ online_nodes }}</div>
+        <div class="stat-change positive">
+            <i class="fas fa-arrow-up"></i>
+            <span>{{ online_nodes }} active</span>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-label">
+            <span>Messages (24h)</span>
+            <i class="fas fa-envelope text-muted"></i>
+        </div>
+        <div class="stat-value">{{ messages_24h }}</div>
+        <div class="stat-description">Last 24 hours</div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-label">
+            <span>Published</span>
+            <i class="fas fa-paper-plane text-muted"></i>
+        </div>
+        <div class="stat-value">{{ status.messages_published|default:0 }}</div>
+        <div class="stat-description">Total published to MQTT</div>
+    </div>
+</div>
+
+<!-- Bridge Status -->
+<div class="card mb-6">
+    <div class="card-header">
+        <h3 class="card-title">Bridge Status</h3>
+        <p class="card-description">Real-time connection status and metrics</p>
+    </div>
+    
+    <div class="grid grid-cols-3 gap-4">
+        <div>
+            <div class="flex items-center gap-2 mb-2">
+                <span class="status-indicator {% if status.status == 'running' %}status-online{% else %}status-offline{% endif %}"></span>
+                <span class="text-sm font-medium">Bridge Status</span>
+            </div>
+            <div class="text-xs text-muted">{{ status.status|title }}</div>
+        </div>
+        
+        <div>
+            <div class="flex items-center gap-2 mb-2">
+                <span class="status-indicator {% if status.mqtt_connected %}status-online{% else %}status-offline{% endif %}"></span>
+                <span class="text-sm font-medium">MQTT Connection</span>
+            </div>
+            <div class="text-xs text-muted">{% if status.mqtt_connected %}Connected{% else %}Disconnected{% endif %}</div>
+        </div>
+        
+        <div>
+            <div class="flex items-center gap-2 mb-2">
+                <span class="status-indicator {% if status.rak4631_connected %}status-online{% else %}status-offline{% endif %}"></span>
+                <span class="text-sm font-medium">RAK4631 Device</span>
+            </div>
+            <div class="text-xs text-muted">{% if status.rak4631_connected %}Connected{% else %}Disconnected{% endif %}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Content Grid -->
+<div class="grid grid-cols-3 gap-4">
+    <!-- Recent Messages -->
+    <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="card-title">Recent Messages</h3>
+                    <p class="card-description">Latest activity from the mesh network</p>
+                </div>
+                <a href="{% url 'meshcore:messages_list' %}" class="btn btn-ghost btn-sm">
+                    View All
+                    <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+        
+        <div style="max-height: 400px; overflow-y: auto;">
+            {% for message in recent_messages %}
+            <div style="padding: 0.75rem; border-bottom: 1px solid hsl(var(--border)); display: flex; align-items: start; gap: 0.75rem;">
+                <div style="flex: 1; min-width: 0;">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="badge badge-secondary">{{ message.message_type }}</span>
+                        <span class="text-sm font-medium">{{ message.sender.name|default:message.sender_hash }}</span>
+                    </div>
+                    {% if message.text_content %}
+                    <div class="text-sm text-muted" style="word-break: break-word;">{{ message.text_content }}</div>
+                    {% endif %}
+                </div>
+                <div class="text-xs text-muted" style="white-space: nowrap;">{{ message.rx_time|timesince }} ago</div>
+            </div>
+            {% empty %}
+            <div style="padding: 2rem; text-align: center;">
+                <div class="text-muted">No messages received yet</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <!-- Message Types & Quick Links -->
+    <div>
+        <!-- Message Types -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h3 class="card-title">Message Types</h3>
+                <p class="card-description">Last 24 hours</p>
+            </div>
+            
+            {% for msg_type in message_types %}
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-sm">{{ msg_type.message_type|title }}</span>
+                <span class="badge badge-secondary">{{ msg_type.count }}</span>
+            </div>
+            {% empty %}
+            <div class="text-sm text-muted text-center">No data</div>
+            {% endfor %}
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Quick Actions</h3>
+            </div>
+            
+            <a href="{% url 'meshcore:nodes_list' %}" class="btn btn-secondary btn-sm mb-2" style="width: 100%;">
+                <i class="fas fa-sitemap"></i>
+                View All Nodes
+            </a>
+            <a href="{% url 'meshcore:messages_list' %}" class="btn btn-secondary btn-sm mb-2" style="width: 100%;">
+                <i class="fas fa-comments"></i>
+                View All Messages
+            </a>
+            <a href="{% url 'meshcore:configuration' %}" class="btn btn-secondary btn-sm" style="width: 100%;">
+                <i class="fas fa-cog"></i>
+                Configuration
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+function restartBridge() {
+    alert('Bridge restart feature coming soon!');
+    return;
+    /* if (confirm('Are you sure you want to restart the bridge?')) {
+        fetch('/meshcore/api/restart/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Bridge restarted successfully');
+                location.reload();
+            } else {
+                alert('Failed to restart bridge: ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('Error: ' + error);
+        });
+    }
+}
+
+// Auto-refresh status every 10 seconds
+setInterval(() => {
+    fetch('{% url "meshcore:api_status" %}')
+        .then(response => response.json())
+        .then(data => {
+            console.log('Status updated:', data);
+        });
+}, 10000);
+</script>
+{% endblock %}

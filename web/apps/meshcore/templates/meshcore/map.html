@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+
+{% block title %}Map - MeshCore Bridge{% endblock %}
+{% block page_title %}Mesh Network Map{% endblock %}
+
+{% block extra_css %}
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<style>
+    #map {
+        position: absolute;
+        top: 60px;
+        left: 240px;
+        right: 0;
+        bottom: 0;
+    }
+    
+    .maplibregl-popup-content {
+        background: hsl(var(--card));
+        color: hsl(var(--foreground));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        padding: 1rem;
+        min-width: 200px;
+    }
+    
+    .maplibregl-popup-close-button {
+        color: hsl(var(--foreground));
+        font-size: 1.5rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .maplibregl-popup-close-button:hover {
+        background: hsl(var(--accent));
+    }
+    
+    .popup-node-name {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+    
+    .popup-node-info {
+        font-size: 0.875rem;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 0.25rem;
+    }
+    
+    .popup-node-info i {
+        width: 16px;
+        margin-right: 0.5rem;
+    }
+    
+    .map-controls {
+        position: absolute;
+        top: 70px;
+        left: 250px;
+        z-index: 10;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        padding: 0.75rem;
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .marker {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 3px solid hsl(var(--primary));
+        background: hsl(var(--card));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .marker:hover {
+        transform: scale(1.2);
+    }
+    
+    .marker.online {
+        border-color: #22c55e;
+        box-shadow: 0 0 12px rgba(34, 197, 94, 0.5);
+    }
+    
+    .marker.offline {
+        border-color: #6b7280;
+    }
+    
+    .marker.favorite {
+        border-width: 4px;
+    }
+    
+    .marker i {
+        font-size: 0.875rem;
+        color: hsl(var(--foreground));
+    }
+    
+    .waypoint-marker {
+        width: 24px;
+        height: 24px;
+        background: #3b82f6;
+        border-radius: 50%;
+        border: 2px solid white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+    
+    .waypoint-marker i {
+        font-size: 0.75rem;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<div class="flex gap-2">
+    <button class="btn btn-ghost btn-sm" onclick="fitMapToNodes()">
+        <i class="fas fa-compress"></i>
+        Fit All
+    </button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleWaypoints()">
+        <i class="fas fa-map-pin"></i>
+        Waypoints
+    </button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleOnlineOnly()">
+        <i class="fas fa-filter"></i>
+        <span id="filter-text">All Nodes</span>
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="map"></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+    // Node data from Django
+    const nodes = {{ nodes_json|safe }};
+    const waypoints = {{ waypoints_json|safe }};
+    
+    let showOnlineOnly = false;
+    let showWaypoints = true;
+    
+    // Initialize map
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: {
+            version: 8,
+            sources: {
+                'osm': {
+                    type: 'raster',
+                    tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                    tileSize: 256,
+                    attribution: '© OpenStreetMap contributors'
+                }
+            },
+            layers: [{
+                id: 'osm',
+                type: 'raster',
+                source: 'osm',
+                minzoom: 0,
+                maxzoom: 19
+            }]
+        },
+        center: [-0.1278, 51.5074],
+        zoom: 12
+    });
+    
+    map.addControl(new maplibregl.NavigationControl());
+    
+    const markers = [];
+    const waypointMarkers = [];
+    
+    // Add node markers
+    nodes.forEach(node => {
+        if (!node.latitude || !node.longitude) return;
+        
+        const el = document.createElement('div');
+        el.className = `marker ${node.is_online ? 'online' : 'offline'} ${node.is_favorite ? 'favorite' : ''}`;
+        el.innerHTML = '<i class="fas fa-broadcast-tower"></i>';
+        
+        const popup = new maplibregl.Popup({ offset: 25 })
+            .setHTML(`
+                <div class="popup-node-name">${node.name || node.node_hash}</div>
+                <div class="popup-node-info">
+                    <i class="fas fa-microchip"></i>
+                    ${node.hardware_model || 'Unknown'}
+                </div>
+                <div class="popup-node-info">
+                    <i class="fas fa-battery-three-quarters"></i>
+                    ${node.battery_level ? node.battery_level + '%' : 'N/A'}
+                </div>
+                <div class="popup-node-info">
+                    <i class="fas fa-signal"></i>
+                    SNR: ${node.snr ? node.snr + ' dB' : 'N/A'}
+                </div>
+                <div class="popup-node-info">
+                    <i class="fas fa-clock"></i>
+                    ${node.last_seen_ago || 'Never'}
+                </div>
+                <a href="/meshcore/nodes/${node.node_hash}/" class="btn btn-primary btn-sm" style="width: 100%; margin-top: 0.5rem;">
+                    View Details
+                </a>
+            `);
+        
+        const marker = new maplibregl.Marker({ element: el })
+            .setLngLat([node.longitude, node.latitude])
+            .setPopup(popup)
+            .addTo(map);
+        
+        markers.push({ marker, node });
+    });
+    
+    // Add waypoint markers
+    waypoints.forEach(waypoint => {
+        const el = document.createElement('div');
+        el.className = 'waypoint-marker';
+        el.innerHTML = '<i class="fas fa-map-pin"></i>';
+        
+        const popup = new maplibregl.Popup({ offset: 15 })
+            .setHTML(`
+                <div class="popup-node-name">${waypoint.name}</div>
+                ${waypoint.description ? `<div class="popup-node-info">${waypoint.description}</div>` : ''}
+            `);
+        
+        const marker = new maplibregl.Marker({ element: el })
+            .setLngLat([waypoint.longitude, waypoint.latitude])
+            .setPopup(popup)
+            .addTo(map);
+        
+        waypointMarkers.push(marker);
+    });
+    
+    // Fit map to show all nodes
+    function fitMapToNodes() {
+        const bounds = new maplibregl.LngLatBounds();
+        
+        markers.forEach(({ node }) => {
+            if (node.latitude && node.longitude) {
+                bounds.extend([node.longitude, node.latitude]);
+            }
+        });
+        
+        if (!bounds.isEmpty()) {
+            map.fitBounds(bounds, { padding: 50 });
+        }
+    }
+    
+    // Toggle waypoints visibility
+    function toggleWaypoints() {
+        showWaypoints = !showWaypoints;
+        waypointMarkers.forEach(marker => {
+            marker.getElement().style.display = showWaypoints ? 'flex' : 'none';
+        });
+    }
+    
+    // Toggle online-only filter
+    function toggleOnlineOnly() {
+        showOnlineOnly = !showOnlineOnly;
+        document.getElementById('filter-text').textContent = showOnlineOnly ? 'Online Only' : 'All Nodes';
+        
+        markers.forEach(({ marker, node }) => {
+            if (showOnlineOnly && !node.is_online) {
+                marker.getElement().style.display = 'none';
+            } else {
+                marker.getElement().style.display = 'flex';
+            }
+        });
+    }
+    
+    // Fit map on load
+    map.on('load', () => {
+        setTimeout(fitMapToNodes, 500);
+    });
+</script>
+{% endblock %}

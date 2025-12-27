@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Nodes - MeshCore Bridge{% endblock %}
+{% block page_title %}Mesh Nodes{% endblock %}
+
+{% block header_actions %}
+<div class="flex gap-2">
+    <a href="?status=all" class="btn btn-sm {% if not status_filter or status_filter == 'all' %}btn-primary{% else %}btn-ghost{% endif %}">
+        All
+    </a>
+    <a href="?status=online" class="btn btn-sm {% if status_filter == 'online' %}btn-primary{% else %}btn-ghost{% endif %}">
+        Online
+    </a>
+    <a href="?status=offline" class="btn btn-sm {% if status_filter == 'offline' %}btn-primary{% else %}btn-ghost{% endif %}">
+        Offline
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-3 gap-4">
+    {% for node in nodes %}
+    <div class="card card-compact">
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+                <span class="status-indicator {% if node.is_online %}status-online{% else %}status-offline{% endif %}"></span>
+                <h3 class="card-title" style="margin: 0;">{{ node.name|default:node.short_name|default:node.node_hash }}</h3>
+            </div>
+            <span class="badge {% if node.is_online %}badge-success{% else %}badge-secondary{% endif %}">
+                {% if node.is_online %}Online{% else %}Offline{% endif %}
+            </span>
+        </div>
+        
+        <div class="mb-3">
+            <div class="flex items-center gap-2 mb-2">
+                <i class="fas fa-microchip text-xs text-muted"></i>
+                <span class="text-sm text-muted">{{ node.hardware_model|default:"Unknown Model" }}</span>
+            </div>
+            
+            <div class="flex items-center gap-2 mb-2">
+                <i class="fas fa-fingerprint text-xs text-muted"></i>
+                <span class="text-sm text-muted">{{ node.node_hash }}</span>
+            </div>
+            
+            {% if node.battery_level %}
+            <div class="flex items-center gap-2 mb-2">
+                <i class="fas fa-battery-three-quarters text-xs text-muted"></i>
+                <span class="text-sm text-muted">{{ node.battery_level }}% Battery</span>
+            </div>
+            {% endif %}
+            
+            {% if node.snr %}
+            <div class="flex items-center gap-2 mb-2">
+                <i class="fas fa-signal text-xs text-muted"></i>
+                <span class="text-sm text-muted">SNR: {{ node.snr }} dB | RSSI: {{ node.rssi }} dBm</span>
+            </div>
+            {% endif %}
+            
+            {% if node.last_seen %}
+            <div class="flex items-center gap-2">
+                <i class="fas fa-clock text-xs text-muted"></i>
+                <span class="text-sm text-muted">{{ node.last_seen|timesince }} ago</span>
+            </div>
+            {% endif %}
+        </div>
+        
+        <a href="{% url 'meshcore:node_detail' node.node_hash %}" class="btn btn-secondary btn-sm" style="width: 100%;">
+            <i class="fas fa-info-circle"></i>
+            View Details
+        </a>
+    </div>
+    {% empty %}
+    <div class="card" style="grid-column: span 3;">
+        <div style="text-align: center; padding: 2rem;">
+            <i class="fas fa-sitemap" style="font-size: 3rem; color: hsl(var(--muted-foreground)); margin-bottom: 1rem;"></i>
+            <p class="text-muted">No nodes found</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

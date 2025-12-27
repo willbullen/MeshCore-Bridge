@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Channels - MeshCore Bridge{% endblock %}
+{% block page_title %}Channels{% endblock %}
+
+{% block header_actions %}
+<button class="btn btn-primary btn-sm">
+    <i class="fas fa-plus"></i>
+    Add Channel
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 gap-4">
+    {% for channel in channels %}
+    <div class="card">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h3 class="card-title" style="margin: 0;">Channel {{ channel.index }}: {{ channel.name|default:"Unnamed" }}</h3>
+                <p class="card-description">{{ channel.get_role_display }}</p>
+            </div>
+            <div class="flex gap-2">
+                <span class="badge {% if channel.role == 'primary' %}badge-success{% elif channel.role == 'secondary' %}badge-warning{% else %}badge-secondary{% endif %}">
+                    {{ channel.get_role_display }}
+                </span>
+                {% if channel.uplink_enabled %}
+                <span class="badge badge-success">Uplink</span>
+                {% endif %}
+                {% if channel.downlink_enabled %}
+                <span class="badge badge-success">Downlink</span>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-3 gap-4">
+            <div>
+                <div class="text-xs text-muted mb-1">Channel Index</div>
+                <div class="text-sm">{{ channel.index }}</div>
+            </div>
+            
+            <div>
+                <div class="text-xs text-muted mb-1">PSK (Base64)</div>
+                <div class="text-sm" style="font-family: monospace; word-break: break-all;">{{ channel.psk|truncatechars:20 }}</div>
+            </div>
+            
+            <div>
+                <div class="text-xs text-muted mb-1">Last Updated</div>
+                <div class="text-sm">{{ channel.updated_at|timesince }} ago</div>
+            </div>
+        </div>
+        
+        <div class="flex gap-2" style="margin-top: 1rem;">
+            <button class="btn btn-secondary btn-sm">
+                <i class="fas fa-edit"></i>
+                Edit
+            </button>
+            <button class="btn btn-ghost btn-sm">
+                <i class="fas fa-qrcode"></i>
+                QR Code
+            </button>
+            <button class="btn btn-ghost btn-sm">
+                <i class="fas fa-copy"></i>
+                Copy PSK
+            </button>
+        </div>
+    </div>
+    {% empty %}
+    <div class="card">
+        <div style="text-align: center; padding: 2rem;">
+            <i class="fas fa-broadcast-tower" style="font-size: 3rem; color: hsl(var(--muted-foreground)); margin-bottom: 1rem;"></i>
+            <p class="text-muted">No channels configured</p>
+            <button class="btn btn-primary btn-sm" style="margin-top: 1rem;">
+                <i class="fas fa-plus"></i>
+                Create First Channel
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

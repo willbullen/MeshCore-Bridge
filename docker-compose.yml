@@ -1,0 +1,164 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: meshcore-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-meshcore}
+      POSTGRES_USER: ${POSTGRES_USER:-meshcore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meshcore123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - meshcore-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-meshcore}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (for Celery)
+  redis:
+    image: redis:7-alpine
+    container_name: meshcore-redis
+    networks:
+      - meshcore-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Django Web Application
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: meshcore-web
+    command: gunicorn valentia_backend.wsgi:application --bind 0.0.0.0:8000 --workers 3
+    environment:
+      - DJANGO_SETTINGS_MODULE=valentia_backend.settings
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-meshcore}:${POSTGRES_PASSWORD:-meshcore123}@postgres:5432/${POSTGRES_DB:-meshcore}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${DJANGO_SECRET_KEY:-change-me-in-production}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
+    volumes:
+      - ./web:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - meshcore-network
+    restart: unless-stopped
+
+  # Celery Worker
+  celery:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: meshcore-celery
+    command: celery -A valentia_backend worker -l info
+    environment:
+      - DJANGO_SETTINGS_MODULE=valentia_backend.settings
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-meshcore}:${POSTGRES_PASSWORD:-meshcore123}@postgres:5432/${POSTGRES_DB:-meshcore}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./web:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - meshcore-network
+    restart: unless-stopped
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: meshcore-celery-beat
+    command: celery -A valentia_backend beat -l info
+    environment:
+      - DJANGO_SETTINGS_MODULE=valentia_backend.settings
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-meshcore}:${POSTGRES_PASSWORD:-meshcore123}@postgres:5432/${POSTGRES_DB:-meshcore}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./web:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - meshcore-network
+    restart: unless-stopped
+
+  # MeshCore Bridge (Serial to MQTT)
+  bridge:
+    build:
+      context: ./bridge
+      dockerfile: Dockerfile
+    container_name: meshcore-bridge
+    environment:
+      - SERIAL_PORT=${SERIAL_PORT:-/dev/ttyACM0}
+      - SERIAL_BAUD=${SERIAL_BAUD:-115200}
+      - MQTT_BROKER=${MQTT_BROKER:-mqtt.example.com}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - MQTT_TOPIC_PREFIX=${MQTT_TOPIC_PREFIX:-meshcore}
+    devices:
+      - ${SERIAL_PORT:-/dev/ttyACM0}:${SERIAL_PORT:-/dev/ttyACM0}
+    privileged: true
+    networks:
+      - meshcore-network
+    restart: unless-stopped
+    depends_on:
+      - web
+
+  # Cloudflare Tunnel
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: meshcore-cloudflared
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - meshcore-network
+    restart: unless-stopped
+    depends_on:
+      - web
+
+  # Portainer (Container Management)
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: meshcore-portainer
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - meshcore-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  portainer_data:
+  static_volume:
+  media_volume:
+
+networks:
+  meshcore-network:
+    driver: bridge

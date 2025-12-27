@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+
+{% block title %}Telemetry - MeshCore Bridge{% endblock %}
+{% block page_title %}Telemetry Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    .telemetry-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.75rem;
+    }
+    
+    .metric-card {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        padding: 0.75rem;
+        transition: all 0.2s;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .metric-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary) / 0.5));
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        border-color: hsl(var(--primary) / 0.5);
+    }
+    
+    .metric-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .metric-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        flex-shrink: 0;
+    }
+    
+    .metric-icon.battery {
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        color: white;
+    }
+    
+    .metric-icon.signal {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+    }
+    
+    .metric-icon.temp {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    
+    .metric-icon.humidity {
+        background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+        color: white;
+    }
+    
+    .metric-icon.pressure {
+        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        color: white;
+    }
+    
+    .metric-label {
+        font-size: 0.6875rem;
+        color: hsl(var(--muted-foreground));
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        font-weight: 600;
+        flex: 1;
+    }
+    
+    .metric-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 1;
+        margin-bottom: 0.25rem;
+    }
+    
+    .metric-subtext {
+        font-size: 0.75rem;
+        color: hsl(var(--muted-foreground));
+        margin-top: 0.25rem;
+    }
+    
+    .progress-bar {
+        height: 4px;
+        background: hsl(var(--secondary));
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 0.5rem;
+    }
+    
+    .progress-fill {
+        height: 100%;
+        border-radius: 999px;
+        transition: width 0.3s ease;
+    }
+    
+    .progress-fill.good {
+        background: linear-gradient(90deg, #22c55e, #16a34a);
+    }
+    
+    .progress-fill.warning {
+        background: linear-gradient(90deg, #f59e0b, #d97706);
+    }
+    
+    .progress-fill.critical {
+        background: linear-gradient(90deg, #ef4444, #dc2626);
+    }
+    
+    .node-telemetry-card {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .node-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid hsl(var(--border));
+    }
+    
+    .node-avatar-large {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.7));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        font-weight: 700;
+        color: white;
+        flex-shrink: 0;
+    }
+    
+    .node-info h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 0 0.125rem 0;
+    }
+    
+    .node-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.75rem;
+        color: hsl(var(--muted-foreground));
+        flex-wrap: wrap;
+    }
+    
+    .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 0.25rem;
+    }
+    
+    .status-dot.online {
+        background: #22c55e;
+        box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+        animation: pulse 2s ease-in-out infinite;
+    }
+    
+    .status-dot.offline {
+        background: #6b7280;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    .section-header {
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+        color: hsl(var(--muted-foreground));
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .filter-tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        padding: 0.25rem;
+        background: hsl(var(--secondary));
+        border-radius: 6px;
+        width: fit-content;
+    }
+    
+    .filter-tab {
+        padding: 0.375rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+        background: transparent;
+        color: hsl(var(--muted-foreground));
+    }
+    
+    .filter-tab.active {
+        background: hsl(var(--card));
+        color: hsl(var(--foreground));
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 2rem 1rem;
+    }
+    
+    .empty-state-icon {
+        font-size: 3rem;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 0.75rem;
+        opacity: 0.5;
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<div class="flex gap-2">
+    <button class="btn btn-ghost btn-sm" onclick="location.reload()">
+        <i class="fas fa-sync"></i>
+    </button>
+    <select class="btn btn-ghost btn-sm" style="padding: 0.25rem 0.75rem; border: 1px solid hsl(var(--border)); border-radius: 6px;">
+        <option>Last Hour</option>
+        <option selected>Last 24 Hours</option>
+        <option>Last Week</option>
+    </select>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Filter Tabs -->
+<div class="filter-tabs">
+    <button class="filter-tab active" onclick="filterNodes('all')">
+        <i class="fas fa-th"></i> All
+    </button>
+    <button class="filter-tab" onclick="filterNodes('online')">
+        <i class="fas fa-circle" style="color: #22c55e; font-size: 0.5rem;"></i> Online
+    </button>
+    <button class="filter-tab" onclick="filterNodes('metrics')">
+        <i class="fas fa-chart-bar"></i> Metrics
+    </button>
+</div>
+
+{% if telemetry_data %}
+    {% for data in telemetry_data %}
+    <div class="node-telemetry-card" data-node-status="{{ data.node.is_online|yesno:'online,offline' }}">
+        <!-- Node Header -->
+        <div class="node-header">
+            <div class="node-avatar-large">
+                {{ data.node.short_name|default:"??" }}
+            </div>
+            <div class="node-info" style="flex: 1; min-width: 0;">
+                <h3 style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ data.node.name }}</h3>
+                <div class="node-meta">
+                    <span>
+                        <span class="status-dot {{ data.node.is_online|yesno:'online,offline' }}"></span>
+                        {{ data.node.is_online|yesno:"Online,Offline" }}
+                    </span>
+                    <span>
+                        <i class="fas fa-microchip"></i>
+                        {{ data.node.hardware_model|default:"Unknown" }}
+                    </span>
+                    {% if data.node.last_seen %}
+                    <span>
+                        <i class="fas fa-clock"></i>
+                        {{ data.node.last_seen|timesince }} ago
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        {% if data.device_metrics or data.environment_metrics %}
+        <!-- Device Metrics -->
+        {% if data.device_metrics %}
+        <div style="margin-bottom: 1rem;">
+            <div class="section-header">
+                <i class="fas fa-microchip"></i> Device
+            </div>
+            
+            <div class="telemetry-grid">
+                <!-- Battery -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon battery">
+                            <i class="fas fa-battery-three-quarters"></i>
+                        </div>
+                        <div class="metric-label">Battery</div>
+                    </div>
+                    <div class="metric-value">
+                        {% if data.device_metrics.battery_level %}
+                            {{ data.device_metrics.battery_level }}%
+                        {% else %}
+                            --
+                        {% endif %}
+                    </div>
+                    {% if data.device_metrics.battery_level %}
+                    <div class="progress-bar">
+                        <div class="progress-fill {% if data.device_metrics.battery_level > 60 %}good{% elif data.device_metrics.battery_level > 20 %}warning{% else %}critical{% endif %}" 
+                             style="width: {{ data.device_metrics.battery_level }}%"></div>
+                    </div>
+                    {% if data.device_metrics.voltage %}
+                    <div class="metric-subtext">{{ data.device_metrics.voltage|floatformat:2 }}V</div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                
+                <!-- Channel Utilization -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon signal">
+                            <i class="fas fa-broadcast-tower"></i>
+                        </div>
+                        <div class="metric-label">Ch. Util</div>
+                    </div>
+                    <div class="metric-value">
+                        {% if data.device_metrics.channel_utilization %}
+                            {{ data.device_metrics.channel_utilization|floatformat:1 }}%
+                        {% else %}
+                            --
+                        {% endif %}
+                    </div>
+                    {% if data.device_metrics.channel_utilization %}
+                    <div class="progress-bar">
+                        <div class="progress-fill {% if data.device_metrics.channel_utilization < 30 %}good{% elif data.device_metrics.channel_utilization < 70 %}warning{% else %}critical{% endif %}" 
+                             style="width: {{ data.device_metrics.channel_utilization }}%"></div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Air Util TX -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon signal">
+                            <i class="fas fa-signal"></i>
+                        </div>
+                        <div class="metric-label">Air TX</div>
+                    </div>
+                    <div class="metric-value">
+                        {% if data.device_metrics.air_util_tx %}
+                            {{ data.device_metrics.air_util_tx|floatformat:1 }}%
+                        {% else %}
+                            --
+                        {% endif %}
+                    </div>
+                    {% if data.device_metrics.air_util_tx %}
+                    <div class="progress-bar">
+                        <div class="progress-fill {% if data.device_metrics.air_util_tx < 20 %}good{% elif data.device_metrics.air_util_tx < 50 %}warning{% else %}critical{% endif %}" 
+                             style="width: {{ data.device_metrics.air_util_tx }}%"></div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Uptime -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white;">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="metric-label">Uptime</div>
+                    </div>
+                    <div class="metric-value">
+                        {% if data.device_metrics.uptime_seconds %}
+                            {% widthratio data.device_metrics.uptime_seconds 3600 1 %}h
+                        {% else %}
+                            --
+                        {% endif %}
+                    </div>
+                    {% if data.device_metrics.uptime_seconds %}
+                    <div class="metric-subtext">{% widthratio data.device_metrics.uptime_seconds 86400 1 %}d</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Environment Metrics -->
+        {% if data.environment_metrics %}
+        <div>
+            <div class="section-header">
+                <i class="fas fa-cloud-sun"></i> Environment
+            </div>
+            
+            <div class="telemetry-grid">
+                <!-- Temperature -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon temp">
+                            <i class="fas fa-temperature-half"></i>
+                        </div>
+                        <div class="metric-label">Temp</div>
+                    </div>
+                    <div class="metric-value">
+                        {% if data.environment_metrics.temperature %}
+                            {{ data.environment_metrics.temperature|floatformat:1 }}°
+                        {% else %}
+                            --
+                        {% endif %}
+                    </div>
+                    {% if data.environment_metrics.temperature %}
+                    <div class="metric-subtext">Celsius</div>
+                    {% endif %}
+                </div>
+                
+                <!-- Humidity -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon humidity">
+                            <i class="fas fa-droplet"></i>
+                        </div>
+                        <div class="metric-label">Humidity</div>
+                    </div>
+                    <div class="metric-value">
+                        {% if data.environment_metrics.relative_humidity %}
+                            {{ data.environment_metrics.relative_humidity|floatformat:1 }}%
+                        {% else %}
+                            --
+                        {% endif %}
+                    </div>
+                    {% if data.environment_metrics.relative_humidity %}
+                    <div class="progress-bar">
+                        <div class="progress-fill good" style="width: {{ data.environment_metrics.relative_humidity }}%"></div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Pressure -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon pressure">
+                            <i class="fas fa-gauge"></i>
+                        </div>
+                        <div class="metric-label">Pressure</div>
+                    </div>
+                    <div class="metric-value">
+                        {% if data.environment_metrics.barometric_pressure %}
+                            {{ data.environment_metrics.barometric_pressure|floatformat:0 }}
+                        {% else %}
+                            --
+                        {% endif %}
+                    </div>
+                    {% if data.environment_metrics.barometric_pressure %}
+                    <div class="metric-subtext">hPa</div>
+                    {% endif %}
+                </div>
+                
+                <!-- Gas Resistance -->
+                {% if data.environment_metrics.gas_resistance %}
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon" style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white;">
+                            <i class="fas fa-wind"></i>
+                        </div>
+                        <div class="metric-label">Gas</div>
+                    </div>
+                    <div class="metric-value">
+                        {{ data.environment_metrics.gas_resistance|floatformat:0 }}
+                    </div>
+                    <div class="metric-subtext">Ω</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        
+        {% else %}
+        <div class="empty-state" style="padding: 1.5rem;">
+            <div class="empty-state-icon" style="font-size: 2rem;">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <p style="color: hsl(var(--muted-foreground)); font-size: 0.875rem;">No telemetry data</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+{% else %}
+<div class="node-telemetry-card">
+    <div class="empty-state">
+        <div class="empty-state-icon">
+            <i class="fas fa-chart-line"></i>
+        </div>
+        <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.5rem;">No Telemetry Data</h3>
+        <p style="color: hsl(var(--muted-foreground)); margin-bottom: 1rem; font-size: 0.875rem;">
+            No online nodes with telemetry data found
+        </p>
+        <a href="{% url 'meshcore:nodes_list' %}" class="btn btn-primary btn-sm">
+            <i class="fas fa-sitemap"></i>
+            View All Nodes
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<script>
+function filterNodes(filter) {
+    // Update active tab
+    document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    event.target.closest('.filter-tab').classList.add('active');
+    
+    // Filter cards
+    const cards = document.querySelectorAll('.node-telemetry-card');
+    cards.forEach(card => {
+        const status = card.getAttribute('data-node-status');
+        const hasMetrics = card.querySelector('.metric-card') !== null;
+        
+        let show = true;
+        if (filter === 'online' && status !== 'online') {
+            show = false;
+        } else if (filter === 'metrics' && !hasMetrics) {
+            show = false;
+        }
+        
+        card.style.display = show ? 'block' : 'none';
+    });
+}
+</script>
+{% endblock %}
