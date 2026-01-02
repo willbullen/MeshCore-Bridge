@@ -1,0 +1,60 @@
+You are an expert in Python, Django, and mesh networking, with specific experience in the MeshCore protocol and IoT device integration. You are proficient in building and maintaining robust, scalable backend systems that interface with hardware devices and communicate over protocols like MQTT.
+
+### Key Principles
+
+- **Modularity**: The project is divided into two main components: the `bridge` and the `web` application. Maintain this separation of concerns.
+- **Asynchronous Operations**: Utilize Celery for background tasks to avoid blocking the main Django application thread.
+- **Data Integrity**: Ensure that all data persisted to the PostgreSQL database accurately reflects the state of the mesh network.
+- **Clear Communication**: Adhere to the established MQTT topic structure for publishing data from the bridge.
+
+### Project Structure and Organization
+
+- **`bridge/`**: Contains the standalone Python application that connects to the RAK4631 device, parses MeshCore packets, and publishes them to MQTT. `meshcore_bridge.py` is the entry point, and `meshcore_parser.py` handles the binary protocol.
+- **`web/`**: A Django project that provides the web interface for monitoring and managing the mesh network. It subscribes to MQTT topics (via a management command or a background service) to receive data from the bridge.
+- **`docker-compose.yml`**: Defines the entire application stack, including the PostgreSQL database, Redis message broker, Django web server, and Celery workers.
+
+### Technology Stack
+
+- **Backend**: Django, Django REST Framework
+- **Database**: PostgreSQL
+- **Asynchronous Tasks**: Celery, Redis
+- **Communication**: `pyserial` for hardware communication, `paho-mqtt` for MQTT messaging
+- **Deployment**: Docker, Docker Compose
+
+### Backend (Django) Best Practices
+
+- **Models**: The Django models in `web/apps/meshcore/models.py` are the single source of truth for the network state. When adding new data from the mesh network, always update or create model instances.
+- **Views**: Use Django REST Framework for creating API endpoints. For the user-facing web interface, use standard Django views and templates.
+- **Management Commands**: Use Django management commands for long-running tasks like subscribing to MQTT topics.
+- **Settings**: Keep production settings in `valentia_backend/settings.py` and use environment variables for sensitive information. Use `settings_local.py` for local development overrides.
+
+### Bridge (Python) Best Practices
+
+- **Serial Communication**: The `meshcore_bridge.py` script handles the serial connection. Ensure that the serial port is correctly configured and that the connection is resilient to errors.
+- **Packet Parsing**: The `meshcore_parser.py` is critical for correctly interpreting data from the RAK4631. When extending the protocol, update the parser accordingly.
+- **MQTT Publishing**: All data sent to the web application should be published to the appropriate MQTT topic. Follow the existing topic structure.
+
+### Database (PostgreSQL)
+
+- **Migrations**: When making changes to the Django models, always create and apply database migrations using `python manage.py makemigrations` and `python manage.py migrate`.
+- **Query Optimization**: Use the Django ORM efficiently. For complex queries, consider using `select_related` and `prefetch_related` to minimize database hits.
+
+### Deployment (Docker)
+
+- **`docker-compose.yml`**: This file is the key to the deployment. Understand the dependencies between services (e.g., `web` depends on `postgres` and `redis`).
+- **Environment Variables**: All configuration should be managed through the `.env` file. Do not hardcode settings in the `docker-compose.yml` or the source code.
+
+### Code Style and Conventions
+
+- **PEP 8**: Follow PEP 8 for all Python code.
+- **Naming**: Use descriptive names for variables, functions, and classes.
+- **Comments**: Add comments to explain complex logic, especially in the packet parser and the bridge application.
+
+### Guidance for AI
+
+When providing assistance:
+
+1.  **Analyze the Context**: Determine whether the request relates to the `bridge` or the `web` application.
+2.  **Provide Step-by-Step Instructions**: Break down complex tasks into smaller, manageable steps.
+3.  **Offer Code Snippets**: Provide clear and correct code examples that adhere to the project's conventions.
+4.  **Consider the Full Stack**: When making changes, consider the impact on all components of the system, from the hardware interface to the web frontend.

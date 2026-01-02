@@ -3,6 +3,11 @@ from . import views
 from .views_multimedia import (media_gallery, upload_image, upload_voice, 
                                 media_detail, send_media, delete_media, 
                                 api_media_status, create_gallery, gallery_detail)
+from .views_device import (scan_serial_ports, scan_bluetooth_devices, 
+                            create_device_connection, connect_device, 
+                            disconnect_device, delete_device, test_device_connection)
+from .views_config import (test_mqtt_connection, test_serial_connection,
+                           save_configuration, get_configuration, reload_bridge_config)
 
 app_name = 'meshcore'
 
@@ -25,6 +30,25 @@ urlpatterns = [
     path('api/status/', views.api_status, name='api_status'),
     path('api/nodes/', views.api_nodes, name='api_nodes'),
     path('api/messages/', views.api_messages, name='api_messages'),
+    
+    # Device connection APIs
+    path('api/scan/serial/', scan_serial_ports, name='api_scan_serial'),
+    path('api/scan/bluetooth/', scan_bluetooth_devices, name='api_scan_bluetooth'),
+    path('api/device/create/', create_device_connection, name='api_create_device'),
+    path('api/device/<str:device_id>/connect/', connect_device, name='api_connect_device'),
+    path('api/device/<str:device_id>/disconnect/', disconnect_device, name='api_disconnect_device'),
+    path('api/device/<str:device_id>/delete/', delete_device, name='api_delete_device'),
+    path('api/device/<str:device_id>/test/', test_device_connection, name='api_test_device'),
+    
+    # Flasher helper APIs
+    path('api/flasher/scan-ports/', scan_serial_ports, name='api_flasher_scan_ports'),
+    
+    # Configuration APIs
+    path('api/config/test-mqtt/', test_mqtt_connection, name='api_test_mqtt'),
+    path('api/config/test-serial/', test_serial_connection, name='api_test_serial'),
+    path('api/config/save/', save_configuration, name='api_save_config'),
+    path('api/config/get/', get_configuration, name='api_get_config'),
+    path('api/config/reload/', reload_bridge_config, name='api_reload_config'),
     
     # Multimedia
     path('media/', media_gallery, name='media_gallery'),

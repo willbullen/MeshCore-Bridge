@@ -13,7 +13,9 @@ from .models import (
 
 def dashboard(request):
     """Main dashboard view"""
-    # Get bridge status
+    from django.db.models import Count
+    
+    # Get or create bridge status
     bridge_status = BridgeStatus.objects.first()
     if not bridge_status:
         bridge_status = BridgeStatus.objects.create()
@@ -22,22 +24,30 @@ def dashboard(request):
     total_nodes = Node.objects.count()
     online_nodes = Node.objects.filter(is_online=True).count()
     
-    # Get message counts
+    # Get message counts (last 24 hours)
+    from datetime import datetime, timedelta
+    twenty_four_hours_ago = timezone.now() - timedelta(hours=24)
     total_messages = Message.objects.count()
+    messages_24h = Message.objects.filter(timestamp__gte=twenty_four_hours_ago).count()
     recent_messages = Message.objects.select_related('sender', 'recipient').order_by('-timestamp')[:10]
     
-    # Get message type breakdown
-    message_types = {}
-    for msg_type, display in Message.MESSAGE_TYPE_CHOICES:
-        count = Message.objects.filter(message_type=msg_type).count()
-        if count > 0:
-            message_types[display] = count
+    # Get message type breakdown (last 24 hours)
+    message_types = Message.objects.filter(
+        timestamp__gte=twenty_four_hours_ago
+    ).values('message_type').annotate(count=Count('id')).order_by('-count')
+    
+    # Add status for bridge connection
+    status = bridge_status
+    if hasattr(bridge_status, 'status'):
+        status.status = bridge_status.status or 'stopped'
     
     context = {
         'bridge_status': bridge_status,
+        'status': status,
         'total_nodes': total_nodes,
         'online_nodes': online_nodes,
         'total_messages': total_messages,
+        'messages_24h': messages_24h,
         'recent_messages': recent_messages,
         'message_types': message_types,
     }
@@ -180,7 +190,15 @@ def telemetry(request):
 
 def connections(request):
     """Connection management"""
-    context = {}
+    from .models import DeviceConnection
+    
+    devices = DeviceConnection.objects.all()
+    saved_connections = DeviceConnection.objects.filter(auto_connect=True)
+    
+    context = {
+        'devices': devices,
+        'saved_connections': saved_connections,
+    }
     return render(request, 'meshcore/connections.html', context)
 
 

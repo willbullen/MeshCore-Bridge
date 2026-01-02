@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Create logs directory if it doesn't exist
+mkdir -p /app/logs
+
 echo "Waiting for postgres..."
 while ! pg_isready -h postgres -p 5432 > /dev/null 2>&1; do
   sleep 1

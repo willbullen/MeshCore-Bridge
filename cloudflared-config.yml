@@ -1,0 +1,16 @@
+# Cloudflare Tunnel Configuration
+# This file overrides the ingress rules from the Cloudflare dashboard
+# Using Docker service names instead of localhost
+
+ingress:
+  # Route for meshcore_bridge - use Docker service name 'web'
+  - hostname: meshcore_bridge.enviroscan.ai
+    service: http://web:8000
+  
+  # Route for meshcore_app - Expo dev server running on host machine
+  # Use host.docker.internal to reach the host from Docker container
+  - hostname: meshcore_app.enviroscan.ai
+    service: http://host.docker.internal:8081
+  
+  # Catch-all rule
+  - service: http_status:404

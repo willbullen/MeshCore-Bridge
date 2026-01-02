@@ -43,9 +43,20 @@ class Node(models.Model):
     is_favorite = models.BooleanField(default=False)
     is_ignored = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
+    hardware_model = models.CharField(max_length=100, blank=True)
+    firmware_version = models.CharField(max_length=50, blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    # Template aliases
+    @property
+    def battery_level(self):
+        """Get battery level from latest stats"""
+        latest_stats = self.stats.first()
+        if latest_stats:
+            return latest_stats.battery_percentage
+        return None
     
     class Meta:
         ordering = ['-last_seen']
@@ -141,11 +152,28 @@ class Message(models.Model):
     attempt_number = models.IntegerField(default=0)
     is_encrypted = models.BooleanField(default=True)
     is_acknowledged = models.BooleanField(default=False)
+    published_to_mqtt = models.BooleanField(default=False)
     
     # Reception info
     received_at = models.DateTimeField(auto_now_add=True)
     rssi = models.IntegerField(null=True, blank=True)
     snr = models.FloatField(null=True, blank=True)
+    
+    # Aliases for template compatibility
+    @property
+    def text_content(self):
+        """Alias for content field"""
+        return self.content
+    
+    @property
+    def rx_time(self):
+        """Alias for received_at field"""
+        return self.received_at
+    
+    @property
+    def to_node(self):
+        """Alias for recipient field"""
+        return self.recipient
     
     class Meta:
         ordering = ['-timestamp']
@@ -285,17 +313,29 @@ class NodeStats(models.Model):
 class BridgeConfiguration(models.Model):
     """
     Configuration for the MeshCore to MQTT bridge
+    All settings are managed through the web UI
     """
     # MQTT settings
-    mqtt_broker = models.CharField(max_length=255, default='localhost')
+    mqtt_broker = models.CharField(max_length=255, default='', blank=True)
     mqtt_port = models.IntegerField(default=1883)
     mqtt_username = models.CharField(max_length=255, blank=True)
     mqtt_password = models.CharField(max_length=255, blank=True)
     mqtt_topic_prefix = models.CharField(max_length=255, default='meshcore')
+    mqtt_enabled = models.BooleanField(default=False, help_text='Enable MQTT connection')
     
-    # Serial connection
-    serial_port = models.CharField(max_length=255, default='/dev/ttyACM0')
+    # Serial connection (RAK4631)
+    serial_port = models.CharField(max_length=255, default='', blank=True, help_text='COM3, COM4 (Windows) or /dev/ttyACM0 (Linux)')
     serial_baud = models.IntegerField(default=115200)
+    serial_enabled = models.BooleanField(default=False, help_text='Enable serial connection')
+    
+    # Connection status
+    mqtt_connected = models.BooleanField(default=False)
+    mqtt_last_test = models.DateTimeField(null=True, blank=True)
+    mqtt_last_error = models.TextField(blank=True)
+    
+    serial_connected = models.BooleanField(default=False)
+    serial_last_test = models.DateTimeField(null=True, blank=True)
+    serial_last_error = models.TextField(blank=True)
     
     # Bridge behavior
     auto_acknowledge = models.BooleanField(default=True)
@@ -314,7 +354,21 @@ class BridgeConfiguration(models.Model):
         verbose_name_plural = 'Bridge Configurations'
     
     def __str__(self):
-        return f"Bridge Config: {self.mqtt_broker}:{self.mqtt_port}"
+        return f"Bridge Configuration"
+    
+    @property
+    def mqtt_status(self):
+        """Get MQTT connection status"""
+        if not self.mqtt_enabled:
+            return 'disabled'
+        return 'connected' if self.mqtt_connected else 'disconnected'
+    
+    @property
+    def serial_status(self):
+        """Get serial connection status"""
+        if not self.serial_enabled:
+            return 'disabled'
+        return 'connected' if self.serial_connected else 'disconnected'
 
 
 # Import multimedia models
@@ -335,6 +389,7 @@ class BridgeStatus(models.Model):
     # Connection status
     serial_connected = models.BooleanField(default=False)
     mqtt_connected = models.BooleanField(default=False)
+    rak4631_connected = models.BooleanField(default=False)
     
     # Counters
     messages_received = models.BigIntegerField(default=0)
@@ -364,3 +419,61 @@ class BridgeStatus(models.Model):
         if self.started_at:
             return int((timezone.now() - self.started_at).total_seconds())
         return 0
+
+
+class DeviceConnection(models.Model):
+    """
+    Stored device connection configurations
+    """
+    CONNECTION_TYPE_CHOICES = [
+        ('serial', 'Serial (USB)'),
+        ('bluetooth', 'Bluetooth'),
+        ('http', 'HTTP'),
+        ('tcp', 'TCP'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('disconnected', 'Disconnected'),
+        ('connecting', 'Connecting'),
+        ('connected', 'Connected'),
+        ('error', 'Error'),
+    ]
+    
+    # Basic info
+    device_id = models.CharField(max_length=64, unique=True, db_index=True)
+    name = models.CharField(max_length=255, blank=True)
+    connection_type = models.CharField(max_length=20, choices=CONNECTION_TYPE_CHOICES)
+    
+    # Connection details (stored as JSON for flexibility)
+    connection_params = models.JSONField(default=dict, help_text='Connection parameters (port, address, etc.)')
+    
+    # Hardware info
+    hardware_model = models.CharField(max_length=100, blank=True)
+    firmware_version = models.CharField(max_length=50, blank=True)
+    
+    # Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='disconnected')
+    is_primary = models.BooleanField(default=False)
+    auto_connect = models.BooleanField(default=False)
+    is_favorite = models.BooleanField(default=False)
+    
+    # Metadata
+    last_connected_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-is_primary', '-last_connected_at']
+        verbose_name = 'Device Connection'
+        verbose_name_plural = 'Device Connections'
+    
+    def __str__(self):
+        return f"{self.name or self.device_id} ({self.get_connection_type_display()})"
+    
+    def save(self, *args, **kwargs):
+        # Ensure only one primary device
+        if self.is_primary:
+            DeviceConnection.objects.filter(is_primary=True).exclude(pk=self.pk).update(is_primary=False)
+        super().save(*args, **kwargs)

@@ -1,6 +1,7 @@
 """
 MeshCore to MQTT Bridge
 Connects to RAK4631 via serial and publishes messages to MQTT
+Configuration is loaded from database
 """
 import os
 import sys
@@ -18,6 +19,7 @@ import queue
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from meshcore_parser import MeshCoreParser, PayloadType, RouteType
+from config_loader import ConfigLoader
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,25 +31,30 @@ logger = logging.getLogger(__name__)
 class MeshCoreBridge:
     """Bridge between MeshCore (serial) and MQTT"""
     
-    def __init__(self, config: dict):
-        self.config = config
+    def __init__(self):
         self.parser = MeshCoreParser()
+        self.config_loader = ConfigLoader()
+        self.config = None
         
         # Serial connection
-        self.serial_port = config.get('serial_port', '/dev/ttyACM0')
-        self.serial_baud = config.get('serial_baud', 115200)
+        self.serial_port = ''
+        self.serial_baud = 115200
+        self.serial_enabled = False
         self.serial_conn: Optional[serial.Serial] = None
         
         # MQTT connection
-        self.mqtt_broker = config.get('mqtt_broker', 'localhost')
-        self.mqtt_port = config.get('mqtt_port', 1883)
-        self.mqtt_username = config.get('mqtt_username')
-        self.mqtt_password = config.get('mqtt_password')
-        self.mqtt_topic_prefix = config.get('mqtt_topic_prefix', 'meshcore')
+        self.mqtt_broker = ''
+        self.mqtt_port = 1883
+        self.mqtt_username = ''
+        self.mqtt_password = ''
+        self.mqtt_topic_prefix = 'meshcore'
+        self.mqtt_enabled = False
         self.mqtt_client: Optional[mqtt.Client] = None
         
         # State
         self.running = False
+        self.serial_connected = False
+        self.mqtt_connected = False
         self.packet_queue = queue.Queue()
         self.stats = {
             'packets_received': 0,
@@ -59,9 +66,82 @@ class MeshCoreBridge:
         
         # Known nodes (cache)
         self.known_nodes = {}
+        
+        # Configuration reload
+        self.config_check_interval = 10  # Check for config changes every 10 seconds
+        self.last_config_check = time.time()
+    
+    def load_configuration(self):
+        """Load configuration from database"""
+        logger.info("Loading configuration from database...")
+        self.config = self.config_loader.load_config()
+        
+        if self.config:
+            # Update settings from config
+            self.serial_port = self.config.get('serial_port', '')
+            self.serial_baud = self.config.get('serial_baud', 115200)
+            self.serial_enabled = self.config.get('serial_enabled', False)
+            
+            self.mqtt_broker = self.config.get('mqtt_broker', '')
+            self.mqtt_port = self.config.get('mqtt_port', 1883)
+            self.mqtt_username = self.config.get('mqtt_username', '')
+            self.mqtt_password = self.config.get('mqtt_password', '')
+            self.mqtt_topic_prefix = self.config.get('mqtt_topic_prefix', 'meshcore')
+            self.mqtt_enabled = self.config.get('mqtt_enabled', False)
+            
+            logger.info(f"Configuration loaded - Serial: {'enabled' if self.serial_enabled else 'disabled'}, MQTT: {'enabled' if self.mqtt_enabled else 'disabled'}")
+        else:
+            logger.warning("No configuration loaded, using defaults")
+    
+    def check_config_changes(self):
+        """Check if configuration has changed and reload if needed"""
+        if time.time() - self.last_config_check < self.config_check_interval:
+            return False
+        
+        self.last_config_check = time.time()
+        
+        if self.config_loader.has_config_changed():
+            logger.info("Configuration changed, reloading...")
+            old_config = self.config
+            self.load_configuration()
+            
+            # Check if serial settings changed
+            if (old_config.get('serial_enabled') != self.serial_enabled or
+                old_config.get('serial_port') != self.serial_port):
+                logger.info("Serial configuration changed, reconnecting...")
+                if self.serial_conn and self.serial_conn.is_open:
+                    self.serial_conn.close()
+                    self.serial_connected = False
+            
+            # Check if MQTT settings changed
+            if (old_config.get('mqtt_enabled') != self.mqtt_enabled or
+                old_config.get('mqtt_broker') != self.mqtt_broker):
+                logger.info("MQTT configuration changed, reconnecting...")
+                if self.mqtt_client:
+                    self.mqtt_client.loop_stop()
+                    self.mqtt_client.disconnect()
+                    self.mqtt_connected = False
+            
+            return True
+        
+        return False
     
     def connect_serial(self) -> bool:
         """Connect to serial port"""
+        # Skip if serial not enabled
+        if not self.serial_enabled:
+            logger.debug("Serial connection not enabled in configuration")
+            self.serial_connected = False
+            self.config_loader.update_connection_status(serial_connected=False)
+            return False
+        
+        # Skip if no serial port configured
+        if not self.serial_port or self.serial_port.strip() == '':
+            logger.info("Serial port not configured, skipping serial connection")
+            self.serial_connected = False
+            self.config_loader.update_connection_status(serial_connected=False)
+            return False
+            
         try:
             logger.info(f"Connecting to serial port {self.serial_port} at {self.serial_baud} baud...")
             self.serial_conn = serial.Serial(
@@ -71,14 +151,32 @@ class MeshCoreBridge:
                 write_timeout=1.0
             )
             logger.info("Serial connection established")
+            self.serial_connected = True
+            self.config_loader.update_connection_status(serial_connected=True)
             return True
         except Exception as e:
             logger.error(f"Failed to connect to serial port: {e}")
+            self.serial_connected = False
+            self.config_loader.update_connection_status(serial_connected=False)
             return False
     
     def connect_mqtt(self) -> bool:
         """Connect to MQTT broker"""
+        # Skip if MQTT not enabled
+        if not self.mqtt_enabled:
+            logger.debug("MQTT connection not enabled in configuration")
+            self.mqtt_connected = False
+            self.config_loader.update_connection_status(mqtt_connected=False)
+            return False
+        
         try:
+            # Skip MQTT if broker is not configured
+            if not self.mqtt_broker or self.mqtt_broker.strip() == '':
+                logger.info("MQTT broker not configured, skipping MQTT connection")
+                self.mqtt_connected = False
+                self.config_loader.update_connection_status(mqtt_connected=False)
+                return False
+                
             logger.info(f"Connecting to MQTT broker {self.mqtt_broker}:{self.mqtt_port}...")
             
             self.mqtt_client = mqtt.Client(client_id="meshcore_bridge")
@@ -94,9 +192,13 @@ class MeshCoreBridge:
             self.mqtt_client.loop_start()
             
             logger.info("MQTT connection established")
+            self.mqtt_connected = True
+            self.config_loader.update_connection_status(mqtt_connected=True)
             return True
         except Exception as e:
             logger.error(f"Failed to connect to MQTT broker: {e}")
+            self.mqtt_connected = False
+            self.config_loader.update_connection_status(mqtt_connected=False)
             return False
     
     def _on_mqtt_connect(self, client, userdata, flags, rc):
@@ -271,17 +373,29 @@ class MeshCoreBridge:
     
     def run(self):
         """Main bridge loop"""
-        logger.info("Starting MeshCore Bridge...")
+        logger.info("Starting MeshCore Bridge (Database-Driven Configuration)...")
         
-        # Connect to serial
-        if not self.connect_serial():
-            logger.error("Failed to connect to serial port, exiting")
-            return
+        # Load configuration from database
+        self.load_configuration()
         
-        # Connect to MQTT
-        if not self.connect_mqtt():
-            logger.error("Failed to connect to MQTT broker, exiting")
-            return
+        # Connect to serial (only if enabled)
+        if self.serial_enabled:
+            if not self.connect_serial():
+                logger.warning(f"Serial connection failed. Will retry periodically.")
+        else:
+            logger.info("Serial connection disabled in configuration")
+        
+        # Connect to MQTT (only if enabled)
+        if self.mqtt_enabled:
+            if not self.connect_mqtt():
+                logger.warning("MQTT connection failed. Will retry periodically.")
+        else:
+            logger.info("MQTT connection disabled in configuration")
+        
+        # If neither connection is available, keep running but log a warning
+        if not self.serial_connected and not self.mqtt_connected:
+            logger.warning("Neither serial nor MQTT is connected.")
+            logger.warning("Bridge will stay running and check for configuration changes.")
         
         self.running = True
         self.stats['started_at'] = datetime.now().isoformat()
@@ -291,17 +405,41 @@ class MeshCoreBridge:
         stats_thread.start()
         
         logger.info("Bridge running, waiting for packets...")
+        logger.info("Configuration will be checked every 10 seconds for changes")
         
         try:
             while self.running:
-                # Read packet from serial
-                packet_data = self.read_serial_packet()
+                # Check for configuration changes
+                if self.check_config_changes():
+                    logger.info("Configuration reloaded, attempting to reconnect...")
+                    if self.serial_enabled and not self.serial_connected:
+                        self.connect_serial()
+                    if self.mqtt_enabled and not self.mqtt_connected:
+                        self.connect_mqtt()
                 
-                if packet_data:
-                    self.process_packet(packet_data)
+                # Read packet from serial (only if enabled and connected)
+                if self.serial_enabled and self.serial_connected:
+                    packet_data = self.read_serial_packet()
+                    
+                    if packet_data:
+                        self.process_packet(packet_data)
+                    else:
+                        # Small delay to avoid busy-waiting
+                        time.sleep(0.01)
                 else:
-                    # Small delay to avoid busy-waiting
-                    time.sleep(0.01)
+                    # If no serial connection, just keep the service alive
+                    time.sleep(5)
+                    
+                    # Try to reconnect if enabled but not connected
+                    if self.serial_enabled and not self.serial_connected:
+                        if not self.serial_conn or not self.serial_conn.is_open:
+                            logger.debug("Attempting to reconnect to serial port...")
+                            self.connect_serial()
+                
+                # Periodically try to reconnect MQTT if enabled but not connected
+                if self.mqtt_enabled and not self.mqtt_connected:
+                    time.sleep(10)  # Check less frequently for MQTT
+                    self.connect_mqtt()
                     
         except KeyboardInterrupt:
             logger.info("Received interrupt signal")
@@ -333,23 +471,12 @@ class MeshCoreBridge:
         logger.info("Bridge shutdown complete")
 
 
-def load_config():
-    """Load configuration from environment variables"""
-    return {
-        'serial_port': os.getenv('SERIAL_PORT', '/dev/ttyACM0'),
-        'serial_baud': int(os.getenv('SERIAL_BAUD', '115200')),
-        'mqtt_broker': os.getenv('MQTT_BROKER', 'localhost'),
-        'mqtt_port': int(os.getenv('MQTT_PORT', '1883')),
-        'mqtt_username': os.getenv('MQTT_USERNAME'),
-        'mqtt_password': os.getenv('MQTT_PASSWORD'),
-        'mqtt_topic_prefix': os.getenv('MQTT_TOPIC_PREFIX', 'meshcore'),
-    }
-
-
 def main():
     """Main entry point"""
-    config = load_config()
-    bridge = MeshCoreBridge(config)
+    logger.info("MeshCore Bridge - Configuration from Database")
+    logger.info("Settings are managed through the web interface at /meshcore/configuration/")
+    
+    bridge = MeshCoreBridge()
     bridge.run()
 
 

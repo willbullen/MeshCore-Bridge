@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Node, Channel, Message, Packet, NodeStats,
-    BridgeConfiguration, BridgeStatus
+    BridgeConfiguration, BridgeStatus, DeviceConnection
 )
 from .models_multimedia import MediaFile, MultiPartPacket, MediaGallery
 
@@ -81,8 +81,30 @@ class BridgeConfigurationAdmin(admin.ModelAdmin):
 
 @admin.register(BridgeStatus)
 class BridgeStatusAdmin(admin.ModelAdmin):
-    list_display = ['status', 'serial_connected', 'mqtt_connected', 'messages_received', 'updated_at']
+    list_display = ['status', 'serial_connected', 'mqtt_connected', 'rak4631_connected', 'messages_received', 'updated_at']
     readonly_fields = ['uptime_seconds', 'updated_at']
+
+
+@admin.register(DeviceConnection)
+class DeviceConnectionAdmin(admin.ModelAdmin):
+    list_display = ['name', 'device_id', 'connection_type', 'status', 'is_primary', 'auto_connect']
+    list_filter = ['connection_type', 'status', 'is_primary', 'auto_connect']
+    search_fields = ['name', 'device_id', 'hardware_model']
+    readonly_fields = ['device_id', 'created_at', 'updated_at', 'last_connected_at']
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('device_id', 'name', 'connection_type', 'hardware_model', 'firmware_version')
+        }),
+        ('Connection Parameters', {
+            'fields': ('connection_params',)
+        }),
+        ('Status', {
+            'fields': ('status', 'is_primary', 'auto_connect', 'is_favorite', 'last_error')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at', 'last_connected_at')
+        }),
+    )
 
 
 @admin.register(MediaFile)

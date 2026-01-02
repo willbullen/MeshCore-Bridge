@@ -232,6 +232,24 @@
 {% endblock %}
 
 {% block content %}
+
+<!-- Information Banner -->
+<div class="card mb-4" style="background: linear-gradient(135deg, hsl(var(--accent)) 0%, hsl(var(--accent) / 0.5) 100%); border-color: hsl(var(--border));">
+    <div style="padding: 1rem;">
+        <div style="display: flex; align-items: start; gap: 1rem;">
+            <i class="fas fa-lightbulb" style="color: hsl(var(--primary)); font-size: 1.5rem; margin-top: 0.25rem;"></i>
+            <div>
+                <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem;">Interactive Device Management</h3>
+                <p style="font-size: 0.875rem; margin-bottom: 0.5rem;">This page manages <strong>multiple devices</strong> for testing, firmware flashing, and manual connections.</p>
+                <p style="font-size: 0.75rem; color: hsl(var(--muted-foreground)); margin-bottom: 0;">
+                    <strong>Note:</strong> This is different from <a href="{% url 'meshcore:configuration' %}" style="color: hsl(var(--primary)); text-decoration: underline;">Configuration</a> which sets up the background bridge service.
+                    <strong>On Windows</strong>, use COM3, COM4, etc. instead of /dev/ttyACM0.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Active Devices -->
 <div style="margin-bottom: 2rem;">
     <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Active Devices</h2>
@@ -351,12 +369,12 @@
             </button>
         </div>
         
-        <form method="post" action="#" onsubmit="alert('Device management coming soon!'); return false;">
+        <form id="newDeviceForm" method="post" onsubmit="handleDeviceFormSubmit(event)">
             {% csrf_token %}
             
             <div class="form-group">
                 <label class="form-label">Connection Type</label>
-                <select name="connection_type" class="modern-select" onchange="updateConnectionFields(this.value)">
+                <select name="connection_type" id="connectionType" class="modern-select" onchange="updateConnectionFields(this.value)">
                     <option value="serial">Serial (USB)</option>
                     <option value="bluetooth">Bluetooth</option>
                     <option value="http">HTTP</option>
@@ -366,9 +384,20 @@
             
             <div id="serialFields">
                 <div class="form-group">
-                    <label class="form-label">Serial Port</label>
-                    <input type="text" name="serial_port" class="modern-input" placeholder="/dev/ttyACM0 or COM3" value="/dev/ttyACM0">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <label class="form-label" style="margin: 0;">Serial Port</label>
+                        <button type="button" class="modern-button modern-button-ghost" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="scanSerialPorts()">
+                            <i class="fas fa-search"></i>
+                            Scan Ports
+                        </button>
+                    </div>
+                    <select name="serial_port" id="serialPortSelect" class="modern-select">
+                        <option value="">Select a port...</option>
+                    </select>
                     <div class="form-hint">The USB serial port where your device is connected</div>
+                    <div id="scanningStatus" class="form-hint" style="display: none; color: hsl(var(--primary));">
+                        <i class="fas fa-spinner fa-spin"></i> Scanning for ports...
+                    </div>
                 </div>
                 
                 <div class="form-group">
@@ -382,9 +411,15 @@
             
             <div id="bluetoothFields" style="display: none;">
                 <div class="form-group">
-                    <label class="form-label">Device Name</label>
-                    <input type="text" name="bt_device_name" class="modern-input" placeholder="MeshCore_1234">
-                    <div class="form-hint">Bluetooth device name or MAC address</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <label class="form-label" style="margin: 0;">Bluetooth Device</label>
+                        <button type="button" class="modern-button modern-button-ghost" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="scanBluetoothDevices()">
+                            <i class="fas fa-bluetooth"></i>
+                            Scan Devices
+                        </button>
+                    </div>
+                    <input type="text" name="bt_device_name" id="btDeviceName" class="modern-input" placeholder="MeshCore_1234">
+                    <div class="form-hint">Bluetooth device name (use scan button to find devices)</div>
                 </div>
             </div>
             
@@ -436,6 +471,8 @@
 <script>
 function openNewConnectionModal() {
     document.getElementById('newConnectionModal').classList.add('active');
+    // Auto-scan serial ports when modal opens
+    scanSerialPorts();
 }
 
 function closeNewConnectionModal() {
@@ -449,41 +486,182 @@ function updateConnectionFields(type) {
     document.getElementById('tcpFields').style.display = type === 'tcp' ? 'block' : 'none';
 }
 
-function connectDevice(deviceId) {
-    fetch(`/meshcore/api/device/${deviceId}/connect/`, {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': '{{ csrf_token }}'
+async function scanSerialPorts() {
+    const statusEl = document.getElementById('scanningStatus');
+    const selectEl = document.getElementById('serialPortSelect');
+    
+    statusEl.style.display = 'block';
+    selectEl.disabled = true;
+    
+    try {
+        const response = await fetch('/meshcore/api/scan/serial/');
+        const data = await response.json();
+        
+        if (data.success) {
+            // Clear existing options
+            selectEl.innerHTML = '<option value="">Select a port...</option>';
+            
+            // Add scanned ports
+            data.ports.forEach(port => {
+                const option = document.createElement('option');
+                option.value = port.device;
+                option.textContent = `${port.device} - ${port.description || 'Unknown'}`;
+                if (port.is_meshcore) {
+                    option.textContent += ` ⭐ (${port.likely_model})`;
+                }
+                selectEl.appendChild(option);
+            });
+            
+            if (data.ports.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No ports found';
+                selectEl.appendChild(option);
+            }
+        } else {
+            alert('Error scanning ports: ' + data.error);
         }
-    }).then(() => location.reload());
+    } catch (error) {
+        console.error('Error scanning ports:', error);
+        alert('Failed to scan ports: ' + error.message);
+    } finally {
+        statusEl.style.display = 'none';
+        selectEl.disabled = false;
+    }
 }
 
-function disconnectDevice(deviceId) {
-    fetch(`/meshcore/api/device/${deviceId}/disconnect/`, {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': '{{ csrf_token }}'
+async function scanBluetoothDevices() {
+    try {
+        // Use Web Bluetooth API if available
+        if ('bluetooth' in navigator) {
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ services: ['battery_service'] }],
+                optionalServices: ['device_information']
+            });
+            
+            document.getElementById('btDeviceName').value = device.name;
+        } else {
+            alert('Web Bluetooth API not available. Please enter device name manually or use a supported browser (Chrome/Edge).');
         }
-    }).then(() => location.reload());
+    } catch (error) {
+        console.error('Bluetooth scanning error:', error);
+        if (error.name !== 'NotFoundError') {
+            alert('Bluetooth scanning error: ' + error.message);
+        }
+    }
 }
 
-function deleteDevice(deviceId) {
-    if (confirm('Are you sure you want to remove this device?')) {
-        fetch(`/meshcore/api/device/${deviceId}/delete/`, {
-            method: 'DELETE',
+async function handleDeviceFormSubmit(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const data = {
+        connection_type: formData.get('connection_type'),
+        serial_port: formData.get('serial_port'),
+        baud_rate: formData.get('baud_rate'),
+        bt_device_name: formData.get('bt_device_name'),
+        http_url: formData.get('http_url'),
+        tcp_host: formData.get('tcp_host'),
+        tcp_port: formData.get('tcp_port'),
+        device_name: formData.get('device_name'),
+        auto_connect: formData.get('auto_connect') ? true : false
+    };
+    
+    try {
+        const response = await fetch('/meshcore/api/device/create/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Device added successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error adding device:', error);
+        alert('Failed to add device: ' + error.message);
+    }
+}
+
+async function connectDevice(deviceId) {
+    try {
+        const response = await fetch(`/meshcore/api/device/${deviceId}/connect/`, {
+            method: 'POST',
             headers: {
                 'X-CSRFToken': '{{ csrf_token }}'
             }
-        }).then(() => location.reload());
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            location.reload();
+        } else {
+            alert('Connection failed: ' + result.error);
+        }
+    } catch (error) {
+        alert('Error connecting: ' + error.message);
+    }
+}
+
+async function disconnectDevice(deviceId) {
+    try {
+        const response = await fetch(`/meshcore/api/device/${deviceId}/disconnect/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            location.reload();
+        } else {
+            alert('Disconnection failed: ' + result.error);
+        }
+    } catch (error) {
+        alert('Error disconnecting: ' + error.message);
+    }
+}
+
+async function deleteDevice(deviceId) {
+    if (confirm('Are you sure you want to remove this device?')) {
+        try {
+            const response = await fetch(`/meshcore/api/device/${deviceId}/delete/`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                location.reload();
+            } else {
+                alert('Deletion failed: ' + result.error);
+            }
+        } catch (error) {
+            alert('Error deleting device: ' + error.message);
+        }
     }
 }
 
 function configureDevice(deviceId) {
-    window.location.href = `/meshcore/device/${deviceId}/configure/`;
+    alert('Device configuration UI coming soon!');
 }
 
 function connectSaved(connId) {
-    window.location.href = `/meshcore/connections/saved/${connId}/connect/`;
+    connectDevice(connId);
 }
 
 // Close modal on outside click

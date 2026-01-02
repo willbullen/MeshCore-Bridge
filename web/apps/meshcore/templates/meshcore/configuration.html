@@ -1,116 +1,563 @@
 {% extends "base.html" %}
 
 {% block title %}Configuration - MeshCore Bridge{% endblock %}
-{% block page_title %}Configuration{% endblock %}
+{% block page_title %}Bridge Configuration{% endblock %}
+
+{% block extra_css %}
+<style>
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .status-connected {
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        color: white;
+    }
+    
+    .status-disconnected {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+    
+    .status-disabled {
+        background: hsl(var(--secondary));
+        color: hsl(var(--muted-foreground));
+    }
+    
+    .test-btn {
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.875rem;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .test-btn-primary {
+        background: hsl(var(--primary));
+        color: white;
+    }
+    
+    .test-btn-primary:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .test-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .alert {
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        display: none;
+    }
+    
+    .alert.show {
+        display: block;
+    }
+    
+    .alert-success {
+        background: hsl(var(--success) / 0.1);
+        border: 1px solid hsl(var(--success) / 0.3);
+        color: hsl(var(--success));
+    }
+    
+    .alert-error {
+        background: hsl(var(--destructive) / 0.1);
+        border: 1px solid hsl(var(--destructive) / 0.3);
+        color: hsl(var(--destructive));
+    }
+    
+    .spinner {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}
 
 {% block header_actions %}
-<button type="submit" form="config-form" class="btn btn-primary btn-sm">
+<button type="button" class="btn btn-secondary btn-sm" onclick="loadConfiguration()">
+    <i class="fas fa-sync-alt"></i>
+    Reload
+</button>
+<button type="button" class="btn btn-primary btn-sm" onclick="saveConfiguration()">
     <i class="fas fa-save"></i>
-    Save Changes
+    Save Configuration
 </button>
 {% endblock %}
 
 {% block content %}
-<form method="post" id="config-form">
-    {% csrf_token %}
-    
-    <div class="grid grid-cols-2 gap-4">
-        <!-- MQTT Configuration -->
-        <div class="card">
-            <div class="card-header">
-                <h3 class="card-title">MQTT Configuration</h3>
-                <p class="card-description">Configure connection to your MQTT broker</p>
+
+<!-- Information Banner -->
+<div class="card mb-4" style="background: linear-gradient(135deg, hsl(var(--primary) / 0.1) 0%, hsl(var(--primary) / 0.05) 100%); border-color: hsl(var(--primary) / 0.3);">
+    <div style="padding: 1rem;">
+        <div style="display: flex; align-items: start; gap: 1rem;">
+            <i class="fas fa-info-circle" style="color: hsl(var(--primary)); font-size: 1.5rem; margin-top: 0.25rem;"></i>
+            <div>
+                <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; color: hsl(var(--primary));">Database-Driven Configuration</h3>
+                <p style="font-size: 0.875rem; margin-bottom: 0.5rem;">All settings are stored in the database and can be updated through this interface.</p>
+                <p style="font-size: 0.75rem; color: hsl(var(--muted-foreground)); margin-bottom: 0;">
+                    <strong>Test connections</strong> before saving. Changes take effect immediately when saved.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alerts -->
+<div id="alert-success" class="alert alert-success">
+    <i class="fas fa-check-circle"></i>
+    <span id="success-message"></span>
+</div>
+
+<div id="alert-error" class="alert alert-error">
+    <i class="fas fa-exclamation-triangle"></i>
+    <span id="error-message"></span>
+</div>
+
+<div class="grid grid-cols-2 gap-4">
+    <!-- MQTT Configuration -->
+    <div class="card">
+        <div class="card-header">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <h3 class="card-title">MQTT Broker</h3>
+                    <p class="card-description">Configure MQTT connection for publishing mesh data</p>
+                </div>
+                <span id="mqtt-status-badge" class="status-badge status-disabled">Disabled</span>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 1rem;">
+                <input type="checkbox" id="mqtt_enabled" onchange="toggleMQTTFields()">
+                <span class="form-label" style="margin: 0;">Enable MQTT Connection</span>
+            </label>
+        </div>
+        
+        <div id="mqtt-fields">
+            <div class="form-group">
+                <label class="form-label">Broker Address</label>
+                <input type="text" id="mqtt_broker" class="form-input" placeholder="mqtt.example.com or 192.168.1.100">
+                <div class="text-xs text-muted" style="margin-top: 0.25rem;">Hostname or IP address of MQTT broker</div>
             </div>
             
             <div class="form-group">
-                <label class="form-label">MQTT Host</label>
-                <input type="text" name="mqtt_host" class="form-input" value="{{ config.mqtt_host }}" required>
+                <label class="form-label">Port</label>
+                <input type="number" id="mqtt_port" class="form-input" value="1883">
             </div>
             
             <div class="form-group">
-                <label class="form-label">MQTT Port</label>
-                <input type="number" name="mqtt_port" class="form-input" value="{{ config.mqtt_port }}" required>
+                <label class="form-label">Username (Optional)</label>
+                <input type="text" id="mqtt_username" class="form-input" placeholder="Leave empty if not required">
             </div>
             
             <div class="form-group">
-                <label class="form-label">Username</label>
-                <input type="text" name="mqtt_username" class="form-input" value="{{ config.mqtt_username }}">
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Password</label>
-                <input type="password" name="mqtt_password" class="form-input" value="{{ config.mqtt_password }}">
+                <label class="form-label">Password (Optional)</label>
+                <input type="password" id="mqtt_password" class="form-input" placeholder="Leave empty if not required">
             </div>
             
             <div class="form-group">
                 <label class="form-label">Topic Prefix</label>
-                <input type="text" name="mqtt_topic_prefix" class="form-input" value="{{ config.mqtt_topic_prefix }}" required>
+                <input type="text" id="mqtt_topic_prefix" class="form-input" value="meshcore">
+                <div class="text-xs text-muted" style="margin-top: 0.25rem;">Messages published to: {prefix}/packets/all</div>
             </div>
             
             <div class="form-group" style="margin-bottom: 0;">
-                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                    <input type="checkbox" name="mqtt_tls_enabled" {% if config.mqtt_tls_enabled %}checked{% endif %}>
-                    <span class="form-label" style="margin: 0;">Enable TLS/SSL</span>
-                </label>
+                <button type="button" class="test-btn test-btn-primary" style="width: 100%;" onclick="testMQTT()" id="mqtt-test-btn">
+                    <i class="fas fa-plug"></i>
+                    Test MQTT Connection
+                </button>
+                <div id="mqtt-test-result" style="margin-top: 0.5rem; font-size: 0.75rem; display: none;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Serial Configuration (RAK4631) -->
+    <div class="card">
+        <div class="card-header">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <h3 class="card-title">RAK4631 Serial Connection</h3>
+                    <p class="card-description">Configure serial port for LoRa device</p>
+                </div>
+                <span id="serial-status-badge" class="status-badge status-disabled">Disabled</span>
             </div>
         </div>
         
-        <!-- RAK4631 Configuration -->
-        <div class="card">
-            <div class="card-header">
-                <h3 class="card-title">RAK4631 Configuration</h3>
-                <p class="card-description">Configure the LoRa device connection</p>
-            </div>
-            
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 1rem;">
+                <input type="checkbox" id="serial_enabled" onchange="toggleSerialFields()">
+                <span class="form-label" style="margin: 0;">Enable Serial Connection</span>
+            </label>
+        </div>
+        
+        <div id="serial-fields">
             <div class="form-group">
-                <label class="form-label">Serial Port</label>
-                <input type="text" name="rak4631_port" class="form-input" value="{{ config.rak4631_port }}" required>
-                <div class="text-xs text-muted" style="margin-top: 0.25rem;">Usually /dev/ttyACM0 or /dev/ttyUSB0</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <label class="form-label" style="margin: 0;">Serial Port</label>
+                    <button type="button" class="btn btn-ghost btn-sm" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="scanSerialPorts()">
+                        <i class="fas fa-search"></i>
+                        Scan Ports
+                    </button>
+                </div>
+                <select id="serial_port" class="form-select">
+                    <option value="">Select a port...</option>
+                </select>
+                <div class="text-xs text-muted" style="margin-top: 0.25rem;">
+                    <strong>Windows:</strong> COM3, COM4, etc. | <strong>Linux:</strong> /dev/ttyACM0, /dev/ttyUSB0
+                </div>
             </div>
             
             <div class="form-group">
                 <label class="form-label">Baud Rate</label>
-                <input type="number" name="rak4631_baud_rate" class="form-input" value="{{ config.rak4631_baud_rate }}" required>
-            </div>
-        </div>
-        
-        <!-- Bridge Settings -->
-        <div class="card" style="grid-column: span 2;">
-            <div class="card-header">
-                <h3 class="card-title">Bridge Settings</h3>
-                <p class="card-description">Configure bridge behavior and logging</p>
+                <select id="serial_baud" class="form-select">
+                    <option value="115200" selected>115200</option>
+                    <option value="921600">921600</option>
+                    <option value="57600">57600</option>
+                    <option value="38400">38400</option>
+                </select>
             </div>
             
-            <div class="grid grid-cols-3 gap-4">
-                <div class="form-group">
-                    <label class="form-label">Log Level</label>
-                    <select name="log_level" class="form-select">
-                        <option value="DEBUG" {% if config.log_level == 'DEBUG' %}selected{% endif %}>Debug</option>
-                        <option value="INFO" {% if config.log_level == 'INFO' %}selected{% endif %}>Info</option>
-                        <option value="WARNING" {% if config.log_level == 'WARNING' %}selected{% endif %}>Warning</option>
-                        <option value="ERROR" {% if config.log_level == 'ERROR' %}selected{% endif %}>Error</option>
-                        <option value="CRITICAL" {% if config.log_level == 'CRITICAL' %}selected{% endif %}>Critical</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Reconnect Interval (seconds)</label>
-                    <input type="number" name="reconnect_interval" class="form-input" value="{{ config.reconnect_interval }}" required>
-                </div>
-                
-                <div style="display: flex; flex-direction: column; gap: 1rem; padding-top: 1.75rem;">
-                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                        <input type="checkbox" name="bridge_enabled" {% if config.bridge_enabled %}checked{% endif %}>
-                        <span class="form-label" style="margin: 0;">Bridge Enabled</span>
-                    </label>
-                    
-                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                        <input type="checkbox" name="auto_reconnect" {% if config.auto_reconnect %}checked{% endif %}>
-                        <span class="form-label" style="margin: 0;">Auto Reconnect</span>
-                    </label>
-                </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <button type="button" class="test-btn test-btn-primary" style="width: 100%;" onclick="testSerial()" id="serial-test-btn">
+                    <i class="fas fa-plug"></i>
+                    Test Serial Connection
+                </button>
+                <div id="serial-test-result" style="margin-top: 0.5rem; font-size: 0.75rem; display: none;"></div>
             </div>
         </div>
     </div>
-</form>
+    
+    <!-- Bridge Behavior -->
+    <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+            <h3 class="card-title">Bridge Behavior</h3>
+            <p class="card-description">Configure how the bridge processes and stores data</p>
+        </div>
+        
+        <div class="grid grid-cols-3 gap-4">
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="auto_acknowledge" checked>
+                    <span class="form-label" style="margin: 0;">Auto-Acknowledge Messages</span>
+                </label>
+                <div class="text-xs text-muted" style="margin-top: 0.25rem;">Automatically send ACK for received messages</div>
+            </div>
+            
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="store_packets" checked>
+                    <span class="form-label" style="margin: 0;">Store Packets in Database</span>
+                </label>
+                <div class="text-xs text-muted" style="margin-top: 0.25rem;">Save all received packets to database</div>
+            </div>
+            
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="forward_to_mqtt" checked>
+                    <span class="form-label" style="margin: 0;">Forward to MQTT</span>
+                </label>
+                <div class="text-xs text-muted" style="margin-top: 0.25rem;">Publish packets to MQTT broker</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load configuration on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadConfiguration();
+    // Auto-scan serial ports
+    scanSerialPorts();
+});
+
+async function loadConfiguration() {
+    try {
+        const response = await fetch('/meshcore/api/config/get/');
+        const data = await response.json();
+        
+        if (data.success) {
+            const config = data.config;
+            
+            // MQTT settings
+            document.getElementById('mqtt_enabled').checked = config.mqtt_enabled;
+            document.getElementById('mqtt_broker').value = config.mqtt_broker || '';
+            document.getElementById('mqtt_port').value = config.mqtt_port || 1883;
+            document.getElementById('mqtt_username').value = config.mqtt_username || '';
+            document.getElementById('mqtt_password').value = config.mqtt_password || '';
+            document.getElementById('mqtt_topic_prefix').value = config.mqtt_topic_prefix || 'meshcore';
+            
+            // Serial settings
+            document.getElementById('serial_enabled').checked = config.serial_enabled;
+            document.getElementById('serial_port').value = config.serial_port || '';
+            document.getElementById('serial_baud').value = config.serial_baud || 115200;
+            
+            // Behavior settings
+            document.getElementById('auto_acknowledge').checked = config.auto_acknowledge;
+            document.getElementById('store_packets').checked = config.store_packets;
+            document.getElementById('forward_to_mqtt').checked = config.forward_to_mqtt;
+            
+            // Update status badges
+            updateStatusBadge('mqtt', config.mqtt_status, config.mqtt_connected);
+            updateStatusBadge('serial', config.serial_status, config.serial_connected);
+            
+            // Toggle field visibility
+            toggleMQTTFields();
+            toggleSerialFields();
+        }
+    } catch (error) {
+        showError('Failed to load configuration: ' + error.message);
+    }
+}
+
+async function saveConfiguration() {
+    try {
+        const config = {
+            mqtt_enabled: document.getElementById('mqtt_enabled').checked,
+            mqtt_broker: document.getElementById('mqtt_broker').value,
+            mqtt_port: parseInt(document.getElementById('mqtt_port').value),
+            mqtt_username: document.getElementById('mqtt_username').value,
+            mqtt_password: document.getElementById('mqtt_password').value,
+            mqtt_topic_prefix: document.getElementById('mqtt_topic_prefix').value,
+            
+            serial_enabled: document.getElementById('serial_enabled').checked,
+            serial_port: document.getElementById('serial_port').value,
+            serial_baud: parseInt(document.getElementById('serial_baud').value),
+            
+            auto_acknowledge: document.getElementById('auto_acknowledge').checked,
+            store_packets: document.getElementById('store_packets').checked,
+            forward_to_mqtt: document.getElementById('forward_to_mqtt').checked,
+        };
+        
+        const response = await fetch('/meshcore/api/config/save/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(config)
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showSuccess('Configuration saved successfully!');
+            // Reload configuration to update status
+            setTimeout(() => loadConfiguration(), 1000);
+        } else {
+            showError(data.error || 'Failed to save configuration');
+        }
+    } catch (error) {
+        showError('Error saving configuration: ' + error.message);
+    }
+}
+
+async function testMQTT() {
+    const btn = document.getElementById('mqtt-test-btn');
+    const resultDiv = document.getElementById('mqtt-test-result');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Testing...';
+    resultDiv.style.display = 'none';
+    
+    try {
+        const config = {
+            mqtt_broker: document.getElementById('mqtt_broker').value,
+            mqtt_port: parseInt(document.getElementById('mqtt_port').value),
+            mqtt_username: document.getElementById('mqtt_username').value,
+            mqtt_password: document.getElementById('mqtt_password').value,
+        };
+        
+        const response = await fetch('/meshcore/api/config/test-mqtt/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(config)
+        });
+        
+        const data = await response.json();
+        
+        resultDiv.style.display = 'block';
+        if (data.success) {
+            resultDiv.style.color = 'hsl(var(--success))';
+            resultDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + data.message;
+            updateStatusBadge('mqtt', 'connected', true);
+        } else {
+            resultDiv.style.color = 'hsl(var(--destructive))';
+            resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> ' + data.error;
+            updateStatusBadge('mqtt', 'disconnected', false);
+        }
+    } catch (error) {
+        resultDiv.style.display = 'block';
+        resultDiv.style.color = 'hsl(var(--destructive))';
+        resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> Error: ' + error.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-plug"></i> Test MQTT Connection';
+    }
+}
+
+async function testSerial() {
+    const btn = document.getElementById('serial-test-btn');
+    const resultDiv = document.getElementById('serial-test-result');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Testing...';
+    resultDiv.style.display = 'none';
+    
+    try {
+        const config = {
+            serial_port: document.getElementById('serial_port').value,
+            serial_baud: parseInt(document.getElementById('serial_baud').value),
+        };
+        
+        const response = await fetch('/meshcore/api/config/test-serial/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(config)
+        });
+        
+        const data = await response.json();
+        
+        resultDiv.style.display = 'block';
+        if (data.success) {
+            resultDiv.style.color = 'hsl(var(--success))';
+            resultDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + data.message;
+            updateStatusBadge('serial', 'connected', true);
+        } else {
+            resultDiv.style.color = 'hsl(var(--destructive))';
+            resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> ' + data.error;
+            updateStatusBadge('serial', 'disconnected', false);
+        }
+    } catch (error) {
+        resultDiv.style.display = 'block';
+        resultDiv.style.color = 'hsl(var(--destructive))';
+        resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> Error: ' + error.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-plug"></i> Test Serial Connection';
+    }
+}
+
+async function scanSerialPorts() {
+    try {
+        const response = await fetch('/meshcore/api/scan/serial/');
+        const data = await response.json();
+        
+        const select = document.getElementById('serial_port');
+        const currentValue = select.value;
+        
+        select.innerHTML = '<option value="">Select a port...</option>';
+        
+        if (data.success && data.ports && data.ports.length > 0) {
+            data.ports.forEach(port => {
+                const option = document.createElement('option');
+                option.value = port.device;
+                option.textContent = `${port.device} - ${port.description || 'Unknown'}`;
+                if (port.is_meshcore) {
+                    option.textContent += ' ⭐ MeshCore Device';
+                }
+                select.appendChild(option);
+            });
+            
+            // Restore previous value if it exists
+            if (currentValue) {
+                select.value = currentValue;
+            }
+        } else {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No ports found';
+            select.appendChild(option);
+        }
+    } catch (error) {
+        console.error('Error scanning ports:', error);
+    }
+}
+
+function toggleMQTTFields() {
+    const enabled = document.getElementById('mqtt_enabled').checked;
+    const fields = document.getElementById('mqtt-fields');
+    fields.style.opacity = enabled ? '1' : '0.5';
+    fields.style.pointerEvents = enabled ? 'auto' : 'none';
+    
+    const inputs = fields.querySelectorAll('input, select, button');
+    inputs.forEach(input => input.disabled = !enabled);
+}
+
+function toggleSerialFields() {
+    const enabled = document.getElementById('serial_enabled').checked;
+    const fields = document.getElementById('serial-fields');
+    fields.style.opacity = enabled ? '1' : '0.5';
+    fields.style.pointerEvents = enabled ? 'auto' : 'none';
+    
+    const inputs = fields.querySelectorAll('input, select, button');
+    inputs.forEach(input => input.disabled = !enabled);
+}
+
+function updateStatusBadge(type, status, connected) {
+    const badge = document.getElementById(`${type}-status-badge`);
+    badge.className = 'status-badge';
+    
+    if (status === 'disabled') {
+        badge.classList.add('status-disabled');
+        badge.innerHTML = '<i class="fas fa-power-off"></i> Disabled';
+    } else if (connected) {
+        badge.classList.add('status-connected');
+        badge.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
+    } else {
+        badge.classList.add('status-disconnected');
+        badge.innerHTML = '<i class="fas fa-times-circle"></i> Disconnected';
+    }
+}
+
+function showSuccess(message) {
+    const alert = document.getElementById('alert-success');
+    const messageEl = document.getElementById('success-message');
+    messageEl.textContent = message;
+    alert.classList.add('show');
+    
+    setTimeout(() => {
+        alert.classList.remove('show');
+    }, 5000);
+}
+
+function showError(message) {
+    const alert = document.getElementById('alert-error');
+    const messageEl = document.getElementById('error-message');
+    messageEl.textContent = message;
+    alert.classList.add('show');
+    
+    setTimeout(() => {
+        alert.classList.remove('show');
+    }, 5000);
+}
+</script>
+
 {% endblock %}

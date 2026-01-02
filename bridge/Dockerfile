@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
 COPY meshcore_parser.py .
+COPY config_loader.py .
 COPY meshcore_bridge.py .
 
 # Run bridge

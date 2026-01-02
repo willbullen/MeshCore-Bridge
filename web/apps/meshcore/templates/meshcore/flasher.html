@@ -135,15 +135,49 @@
         <div class="card mb-3" v-if="selectedDevice.type === 'nrf52'" style="background: hsl(var(--primary) / 0.05); border-color: hsl(var(--primary) / 0.2);">
             <div style="padding: 0.75rem;">
                 <div style="display: flex; align-items: start; gap: 0.75rem; margin-bottom: 0.75rem;">
-                    <i class="fas fa-info-circle" style="color: hsl(var(--primary)); margin-top: 0.125rem;"></i>
-                    <div style="font-size: 0.75rem;">
-                        <strong>DFU Mode Required:</strong> Your RAK4631 must be in DFU (Device Firmware Update) mode to flash.
+                    <i class="fas fa-exclamation-triangle" style="color: hsl(var(--warning)); margin-top: 0.125rem; font-size: 1.25rem;"></i>
+                    <div style="font-size: 0.875rem;">
+                        <strong style="color: hsl(var(--warning)); display: block; margin-bottom: 0.5rem;">⚠️ IMPORTANT: Put Device in DFU Mode First!</strong>
+                        <ol style="margin: 0; padding-left: 1.25rem; line-height: 1.6;">
+                            <li><strong>Locate RESET button</strong> on your RAK4631 (small button near USB)</li>
+                            <li><strong>Double-press quickly</strong> (press → release → press → release within 500ms)</li>
+                            <li><strong>Verify blue LED</strong> is pulsing/breathing (not solid)</li>
+                            <li><strong>Then click</strong> the button below within 30 seconds</li>
+                        </ol>
                     </div>
                 </div>
                 <button class="btn btn-secondary" style="width: 100%;" @click="enterDfuMode" :disabled="dfuActive">
-                    <i :class="dfuActive ? 'fas fa-check' : 'fas fa-code'"></i>
-                    [[ dfuActive ? 'DFU Mode Active' : 'Enter DFU Mode' ]]
+                    <i :class="dfuActive ? 'fas fa-check' : 'fas fa-usb'"></i>
+                    [[ dfuActive ? 'DFU Mode Active - Ready to Flash!' : 'Connect to Device (DFU Mode)' ]]
                 </button>
+                <div v-if="!dfuActive" style="margin-top: 0.5rem; font-size: 0.75rem; color: hsl(var(--muted-foreground)); text-align: center;">
+                    Having trouble? Check Device Manager for "nRF52 DFU"
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3" v-if="selectedDevice.type === 'nrf52' && !dfuActive" style="background: hsl(var(--secondary)); border-color: hsl(var(--border));">
+            <div style="padding: 0.75rem;">
+                <h4 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem;">
+                    <i class="fas fa-laptop-medical"></i>
+                    Windows Device Manager Checklist
+                </h4>
+                <div style="font-size: 0.75rem; line-height: 1.6;">
+                    <p style="margin-bottom: 0.5rem;">Open Device Manager to verify:</p>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 0.25rem; border-bottom: 1px solid hsl(var(--border));"><strong>Normal mode:</strong></td>
+                            <td style="padding: 0.25rem; border-bottom: 1px solid hsl(var(--border));">"USB Serial Device (COMx)" under Ports</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0.25rem;"><strong>DFU mode:</strong></td>
+                            <td style="padding: 0.25rem;">"nRF52 DFU" or "Nordic nRF52" under USB devices</td>
+                        </tr>
+                    </table>
+                    <p style="margin-top: 0.5rem; font-style: italic;">
+                        💡 If you don't see the device change, try a different USB cable or port.
+                    </p>
+                </div>
             </div>
         </div>
 
@@ -344,11 +378,40 @@ createApp({
     },
     methods: {
         checkWebAPIs() {
-            if (!('serial' in navigator)) {
-                console.warn('Web Serial API not supported');
-            }
+            const errors = [];
+            
+            // Check Web USB API
             if (!('usb' in navigator)) {
-                console.warn('Web USB API not supported');
+                errors.push({
+                    title: 'Web USB API Not Supported',
+                    message: 'Your browser does not support Web USB API (required for nRF52 devices).',
+                    solution: 'Please use Chrome 61+, Edge 79+, or Opera 48+ browser.'
+                });
+            }
+            
+            // Check Web Serial API
+            if (!('serial' in navigator)) {
+                errors.push({
+                    title: 'Web Serial API Not Supported',
+                    message: 'Your browser does not support Web Serial API (required for ESP32 devices).',
+                    solution: 'Please use Chrome 89+, Edge 89+, or Opera 76+ browser.'
+                });
+            }
+            
+            // Check HTTPS (except localhost)
+            if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+                errors.push({
+                    title: 'HTTPS Required',
+                    message: 'Web USB/Serial APIs require HTTPS for security.',
+                    solution: 'Access via https:// URL or use localhost for testing.'
+                });
+            }
+            
+            // Display errors to user
+            if (errors.length > 0) {
+                this.flashError = errors.map(e => 
+                    `⚠️ ${e.title}\n${e.message}\n💡 ${e.solution}`
+                ).join('\n\n');
             }
         },
         async loadFirmwareConfig() {
@@ -371,25 +434,60 @@ createApp({
         async enterDfuMode() {
             try {
                 this.flashLog.push('Requesting USB device access...');
+                this.flashLog.push('⏳ Waiting for you to select device in browser popup...');
                 
-                // Request USB device (Nordic nRF52 DFU)
-                const device = await navigator.usb.requestDevice({
-                    filters: [{ vendorId: 0x1915 }] // Nordic Semiconductor
-                });
+                let device;
                 
-                this.flashLog.push('USB device connected');
-                this.flashLog.push('Checking for DFU mode...');
+                // Try with Nordic vendor ID filter (DFU bootloader)
+                try {
+                    device = await navigator.usb.requestDevice({
+                        filters: [
+                            { vendorId: 0x1915 }, // Nordic Semiconductor (DFU mode)
+                            { vendorId: 0x239A, productId: 0x802A } // Adafruit bootloader fallback
+                        ]
+                    });
+                } catch (filterError) {
+                    // If filtered request cancelled, try without filter
+                    if (filterError.name === 'NotFoundError') {
+                        this.flashLog.push('');
+                        this.flashLog.push('❌ No DFU devices found!');
+                        this.flashLog.push('');
+                        this.flashLog.push('🔧 Troubleshooting Steps:');
+                        this.flashLog.push('1. DOUBLE-PRESS the RESET button on your RAK4631');
+                        this.flashLog.push('2. Blue LED should pulse/breathe (not solid)');
+                        this.flashLog.push('3. Check Device Manager: should show "nRF52 DFU"');
+                        this.flashLog.push('4. Try again within 30 seconds');
+                        this.flashLog.push('');
+                        this.flashLog.push('💡 Tip: Timing matters! Press-release-press-release quickly.');
+                        throw new Error('Device not in DFU bootloader mode');
+                    }
+                    throw filterError; // Re-throw other errors
+                }
+                
+                this.flashLog.push(`✓ USB device selected: ${device.productName || 'Unknown'}`);
+                this.flashLog.push('Initializing DFU protocol...');
                 
                 // Initialize DFU
                 this.dfu = new Dfu(device);
                 await this.dfu.init();
                 
                 this.dfuActive = true;
-                this.flashLog.push('✓ DFU mode active!');
+                this.flashLog.push('✓ DFU mode confirmed! Ready to flash firmware.');
                 
             } catch (error) {
-                this.flashLog.push(`Error: ${error.message}`);
-                this.flashLog.push('Please double-press the reset button on your RAK4631');
+                console.error('DFU mode error:', error);
+                
+                if (error.name === 'NotFoundError') {
+                    this.flashLog.push('');
+                    this.flashLog.push('❌ Browser popup cancelled or no devices found');
+                } else if (error.name === 'SecurityError') {
+                    this.flashLog.push('');
+                    this.flashLog.push('❌ USB access blocked by browser');
+                    this.flashLog.push('💡 Try using Chrome, Edge, or Opera browser');
+                } else {
+                    this.flashLog.push('');
+                    this.flashLog.push(`❌ Error: ${error.message}`);
+                }
             }
         },
         async startFlashing() {
@@ -420,9 +518,28 @@ createApp({
             }
 
             this.flashLog.push('Requesting serial port access...');
+            this.flashLog.push('⏳ Please select your ESP32 device in the browser popup...');
             
-            // Request serial port
-            this.port = await navigator.serial.requestPort();
+            // Request serial port with filters for common USB-to-serial chips
+            try {
+                this.port = await navigator.serial.requestPort({
+                    filters: [
+                        { usbVendorId: 0x10C4, usbProductId: 0xEA60 }, // CP210x
+                        { usbVendorId: 0x1A86, usbProductId: 0x7523 }, // CH340
+                        { usbVendorId: 0x0403 }, // FTDI
+                        { usbVendorId: 0x2E8A }, // Raspberry Pi Pico
+                    ]
+                });
+            } catch (filterError) {
+                // If filtered request fails or is cancelled, try without filters
+                if (filterError.name === 'NotFoundError') {
+                    this.flashLog.push('');
+                    this.flashLog.push('💡 Tip: Make sure your ESP32 is plugged in via USB');
+                    throw new Error('No ESP32 device found. Please connect your device and try again.');
+                }
+                throw filterError;
+            }
+            
             await this.port.open({ baudRate: 115200 });
             
             this.flashLog.push('✓ Serial port opened');

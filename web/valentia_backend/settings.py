@@ -8,10 +8,58 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'change-me-in-production')
 DEBUG = os.environ.get('DJANGO_DEBUG', '0') == '1'
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',')
 
+# Allow hostnames with underscores (for Cloudflare tunnels)
+# Django validates hostnames according to RFC, but Cloudflare allows underscores
+import django.http.request
+import re
+
+# Patch the hostname validation to allow underscores
+original_validate_host = django.http.request.validate_host
+
+def validate_host(host, allowed_hosts):
+    # Allow underscores in hostnames for Cloudflare compatibility
+    if '_' in host:
+        # Check if host matches any allowed host pattern
+        if '*' in allowed_hosts or any(host == allowed or host.endswith('.' + allowed) for allowed in allowed_hosts if allowed != '*'):
+            return True
+    return original_validate_host(host, allowed_hosts)
+
+django.http.request.validate_host = validate_host
+
+# Also patch the get_host method to bypass RFC validation for underscores
+original_get_host = django.http.request.HttpRequest.get_host
+
+def get_host(self):
+    """Override get_host to allow underscores in hostnames"""
+    # Get the raw host header
+    host = self.META.get('HTTP_HOST', '')
+    if not host:
+        # Fallback to SERVER_NAME
+        host = self.META.get('SERVER_NAME', '')
+    
+    # If hostname contains underscore, bypass Django's strict validation
+    if '_' in host:
+        # Remove port if present
+        if ':' in host:
+            host, port = host.rsplit(':', 1)
+        # Return the host as-is (bypassing RFC validation)
+        return host
+    
+    # Use original method for normal hostnames
+    return original_get_host(self)
+
+django.http.request.HttpRequest.get_host = get_host
+
 # CSRF trusted origins
 _csrf_trusted_origins_env = os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '')
 if _csrf_trusted_origins_env:
     CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in _csrf_trusted_origins_env.split(',') if origin.strip()]
+else:
+    # Default CSRF trusted origins for Cloudflare tunnels
+    CSRF_TRUSTED_ORIGINS = [
+        'https://meshcore_bridge.enviroscan.ai',
+        'https://meshcore_app.enviroscan.ai',
+    ]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -24,7 +72,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_celery_beat',
     'django_celery_results',
-    'apps.meshtastic',
+    'apps.meshcore',
 ]
 
 MIDDLEWARE = [
@@ -106,7 +154,8 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if not DEBUG else []
+_cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '').strip()
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins.split(',') if origin.strip()] if _cors_origins and not DEBUG else []
 
 # REST Framework
 REST_FRAMEWORK = {
