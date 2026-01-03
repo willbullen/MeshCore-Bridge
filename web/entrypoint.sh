@@ -24,7 +24,9 @@ else:
     print('Superuser already exists')
 END
 
-echo "Creating demo data..."
-python manage.py create_demo_data || true
+# Demo data creation is now DISABLED
+# To create demo data manually, run: docker exec meshcore-web python manage.py create_demo_data
+# echo "Creating demo data..."
+# python manage.py create_demo_data || true
 
 exec "$@"

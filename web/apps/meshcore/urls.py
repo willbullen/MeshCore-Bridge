@@ -7,7 +7,8 @@ from .views_device import (scan_serial_ports, scan_bluetooth_devices,
                             create_device_connection, connect_device, 
                             disconnect_device, delete_device, test_device_connection)
 from .views_config import (test_mqtt_connection, test_serial_connection,
-                           save_configuration, get_configuration, reload_bridge_config)
+                           save_configuration, get_configuration, reload_bridge_config,
+                           get_bridge_logs)
 
 app_name = 'meshcore'
 
@@ -49,6 +50,7 @@ urlpatterns = [
     path('api/config/save/', save_configuration, name='api_save_config'),
     path('api/config/get/', get_configuration, name='api_get_config'),
     path('api/config/reload/', reload_bridge_config, name='api_reload_config'),
+    path('api/bridge/logs/', get_bridge_logs, name='api_bridge_logs'),
     
     # Multimedia
     path('media/', media_gallery, name='media_gallery'),

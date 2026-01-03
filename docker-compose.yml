@@ -114,20 +114,32 @@ services:
     environment:
       # Database connection (reads configuration from here)
       - DATABASE_URL=postgresql://${POSTGRES_USER:-meshcore}:${POSTGRES_PASSWORD:-meshcore123}@postgres:5432/${POSTGRES_DB:-meshcore}
-      # Legacy environment variables (NO LONGER USED - configure via web interface)
-      # - SERIAL_PORT=${SERIAL_PORT:-}
-      # - SERIAL_BAUD=${SERIAL_BAUD:-115200}
-      # - MQTT_BROKER=${MQTT_BROKER:-}
-      # - MQTT_PORT=${MQTT_PORT:-1883}
-    # For Windows: Uncomment and set your COM port
+    
+    # Windows COM Port Passthrough (Supports COM1-COM20)
+    # This allows any COM port configured in the web UI to work
+    # The bridge will only use the port you configure in /meshcore/configuration/
+    devices:
+      - //./COM1://./COM1
+      - //./COM2://./COM2
+      - //./COM3://./COM3
+      - //./COM4://./COM4
+      - //./COM5://./COM5
+      - //./COM6://./COM6
+      - //./COM7://./COM7
+      - //./COM8://./COM8
+      - //./COM9://./COM9
+      - //./COM10://./COM10
+      # Add more if needed: //./COM11://./COM11
+    privileged: true
+    
+    # For Linux: Comment out Windows devices above and uncomment below
     # devices:
-    #   - //./COM3://./COM3    # Windows syntax for COM ports
+    #   - /dev/ttyACM0:/dev/ttyACM0
+    #   - /dev/ttyACM1:/dev/ttyACM1
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    #   - /dev/ttyUSB1:/dev/ttyUSB1
     # privileged: true
-    # 
-    # For Linux: Uncomment and set your serial device
-    # devices:
-    #   - /dev/ttyACM0:/dev/ttyACM0    # Linux syntax
-    # privileged: true
+    
     networks:
       - meshcore-network
     restart: unless-stopped

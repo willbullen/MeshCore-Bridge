@@ -216,37 +216,16 @@
             <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                     <label class="form-label" style="margin: 0;">Serial Port</label>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button type="button" class="btn btn-ghost btn-sm" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="showPortHelp()">
-                            <i class="fas fa-question-circle"></i>
-                            How to Find
-                        </button>
-                        <button type="button" class="btn btn-ghost btn-sm" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="detectSerialPort()">
-                            <i class="fas fa-usb"></i>
-                            Detect Device
-                        </button>
-                    </div>
+                    <button type="button" class="btn btn-ghost btn-sm" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="scanSerialPorts()">
+                        <i class="fas fa-search"></i>
+                        Scan Ports
+                    </button>
                 </div>
-                <input type="text" id="serial_port" class="form-input" placeholder="Type your port: COM3, COM4, /dev/ttyACM0, etc.">
+                <select id="serial_port" class="form-select">
+                    <option value="">Select a port...</option>
+                </select>
                 <div class="text-xs text-muted" style="margin-top: 0.25rem;">
                     <strong>Windows:</strong> COM3, COM4, etc. | <strong>Linux:</strong> /dev/ttyACM0, /dev/ttyUSB0
-                </div>
-                <div id="port-hint" class="text-xs" style="margin-top: 0.5rem; padding: 0.75rem; background: linear-gradient(135deg, hsl(var(--primary) / 0.1) 0%, hsl(var(--primary) / 0.05) 100%); border: 1px solid hsl(var(--primary) / 0.2); border-radius: 6px; display: none;">
-                    <div style="font-weight: 600; margin-bottom: 0.5rem;">
-                        <i class="fas fa-info-circle"></i> How to Find Your COM Port (Windows)
-                    </div>
-                    <ol style="margin: 0; padding-left: 1.25rem; line-height: 1.6;">
-                        <li>Press <strong>Win + X</strong> on your keyboard</li>
-                        <li>Click <strong>"Device Manager"</strong></li>
-                        <li>Expand <strong>"Ports (COM & LPT)"</strong></li>
-                        <li>Look for your device:
-                            <ul style="margin-top: 0.25rem;">
-                                <li>"USB Serial Device (COM3)" ← Your port is <strong>COM3</strong></li>
-                                <li>"nRF52 USB Device (COM4)" ← Your port is <strong>COM4</strong></li>
-                            </ul>
-                        </li>
-                        <li>Type the COM number (e.g., <strong>COM3</strong>) in the field above</li>
-                    </ol>
                 </div>
             </div>
             
@@ -271,13 +250,13 @@
     </div>
     
     <!-- Bridge Behavior -->
-    <div class="card">
+    <div class="card" style="grid-column: span 2;">
         <div class="card-header">
             <h3 class="card-title">Bridge Behavior</h3>
             <p class="card-description">Configure how the bridge processes and stores data</p>
         </div>
         
-        <div class="grid grid-cols-1 gap-3">
+        <div class="grid grid-cols-3 gap-4">
             <div class="form-group">
                 <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                     <input type="checkbox" id="auto_acknowledge" checked>
@@ -303,44 +282,14 @@
             </div>
         </div>
     </div>
-    
-    <!-- Live Traffic Logs -->
-    <div class="card">
-        <div class="card-header">
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <div>
-                    <h3 class="card-title">Live Bridge Traffic</h3>
-                    <p class="card-description">Real-time logs from bridge service</p>
-                </div>
-                <button type="button" class="btn btn-ghost btn-sm" onclick="refreshLogs()">
-                    <i class="fas fa-sync-alt"></i>
-                    Refresh
-                </button>
-            </div>
-        </div>
-        
-        <div id="bridge-logs" style="background: #000; color: #0f0; font-family: 'Courier New', monospace; font-size: 0.75rem; padding: 1rem; border-radius: 6px; max-height: 300px; overflow-y: auto; line-height: 1.4;">
-            <div style="color: #888;">Loading bridge logs...</div>
-        </div>
-        
-        <div style="padding-top: 0.75rem; display: flex; gap: 0.5rem;">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAutoRefreshLogs()">
-                <i class="fas fa-sync" id="auto-refresh-icon"></i>
-                <span id="auto-refresh-text">Enable Auto-Refresh</span>
-            </button>
-            <button type="button" class="btn btn-ghost btn-sm" onclick="clearLogsDisplay()">
-                <i class="fas fa-eraser"></i>
-                Clear Display
-            </button>
-        </div>
-    </div>
 </div>
 
 <script>
 // Load configuration on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadConfiguration();
-    // Note: User can click "Detect Device" or "How to Find" for port discovery
+    // Auto-scan serial ports
+    scanSerialPorts();
 });
 
 async function loadConfiguration() {
@@ -384,39 +333,22 @@ async function loadConfiguration() {
 
 async function saveConfiguration() {
     try {
-        const serialPort = document.getElementById('serial_port').value;
-        const serialEnabled = document.getElementById('serial_enabled').checked;
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/df9a534d-4022-40c8-b784-c1000b31b496',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'configuration.html:saveConfiguration:entry',message:'Function called',data:{serialPort:serialPort,serialEnabled:serialEnabled},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
-        
-        console.log('Saving configuration...');
-        console.log('Serial Enabled:', serialEnabled);
-        console.log('Serial Port:', serialPort);
-        
         const config = {
             mqtt_enabled: document.getElementById('mqtt_enabled').checked,
-            mqtt_broker: document.getElementById('mqtt_broker').value.trim(),
-            mqtt_port: parseInt(document.getElementById('mqtt_port').value) || 1883,
-            mqtt_username: document.getElementById('mqtt_username').value.trim(),
-            mqtt_password: document.getElementById('mqtt_password').value.trim(),
-            mqtt_topic_prefix: document.getElementById('mqtt_topic_prefix').value.trim() || 'meshcore',
+            mqtt_broker: document.getElementById('mqtt_broker').value,
+            mqtt_port: parseInt(document.getElementById('mqtt_port').value),
+            mqtt_username: document.getElementById('mqtt_username').value,
+            mqtt_password: document.getElementById('mqtt_password').value,
+            mqtt_topic_prefix: document.getElementById('mqtt_topic_prefix').value,
             
-            serial_enabled: serialEnabled,
-            serial_port: serialPort.trim(),
-            serial_baud: parseInt(document.getElementById('serial_baud').value) || 115200,
+            serial_enabled: document.getElementById('serial_enabled').checked,
+            serial_port: document.getElementById('serial_port').value,
+            serial_baud: parseInt(document.getElementById('serial_baud').value),
             
             auto_acknowledge: document.getElementById('auto_acknowledge').checked,
             store_packets: document.getElementById('store_packets').checked,
             forward_to_mqtt: document.getElementById('forward_to_mqtt').checked,
         };
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/df9a534d-4022-40c8-b784-c1000b31b496',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'configuration.html:saveConfiguration:before_fetch',message:'Config object built',data:{config_serial_port:config.serial_port,config_serial_enabled:config.serial_enabled,config_keys:Object.keys(config)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
-        
-        console.log('Config to save:', config);
         
         const response = await fetch('/meshcore/api/config/save/', {
             method: 'POST',
@@ -429,30 +361,14 @@ async function saveConfiguration() {
         
         const data = await response.json();
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/df9a534d-4022-40c8-b784-c1000b31b496',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'configuration.html:saveConfiguration:after_fetch',message:'API response received',data:{success:data.success,response_config:data.config},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
-        
-        console.log('Save response:', data);
-        
         if (data.success) {
-            showSuccess(
-                `Configuration saved successfully!\n` +
-                `Serial: ${serialEnabled ? serialPort || '(empty)' : 'disabled'}\n` +
-                `MQTT: ${config.mqtt_enabled ? config.mqtt_broker || '(empty)' : 'disabled'}\n` +
-                `Bridge will reload configuration within 10 seconds...`
-            );
-            
+            showSuccess('Configuration saved successfully!');
             // Reload configuration to update status
-            setTimeout(() => {
-                loadConfiguration();
-                refreshLogs();
-            }, 2000);
+            setTimeout(() => loadConfiguration(), 1000);
         } else {
             showError(data.error || 'Failed to save configuration');
         }
     } catch (error) {
-        console.error('Save error:', error);
         showError('Error saving configuration: ' + error.message);
     }
 }
@@ -507,201 +423,81 @@ async function testMQTT() {
 async function testSerial() {
     const btn = document.getElementById('serial-test-btn');
     const resultDiv = document.getElementById('serial-test-result');
-    const portInput = document.getElementById('serial_port');
-    const baudInput = document.getElementById('serial_baud');
     
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Testing...';
     resultDiv.style.display = 'none';
     
-    // Get values
-    const portName = portInput.value.trim();
-    const baudRate = parseInt(baudInput.value);
-    
-    if (!portName) {
+    try {
+        const config = {
+            serial_port: document.getElementById('serial_port').value,
+            serial_baud: parseInt(document.getElementById('serial_baud').value),
+        };
+        
+        const response = await fetch('/meshcore/api/config/test-serial/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(config)
+        });
+        
+        const data = await response.json();
+        
+        resultDiv.style.display = 'block';
+        if (data.success) {
+            resultDiv.style.color = 'hsl(var(--success))';
+            resultDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + data.message;
+            updateStatusBadge('serial', 'connected', true);
+        } else {
+            resultDiv.style.color = 'hsl(var(--destructive))';
+            resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> ' + data.error;
+            updateStatusBadge('serial', 'disconnected', false);
+        }
+    } catch (error) {
         resultDiv.style.display = 'block';
         resultDiv.style.color = 'hsl(var(--destructive))';
-        resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> Please enter a serial port first';
+        resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> Error: ' + error.message;
+    } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-plug"></i> Test Serial Connection';
-        return;
-    }
-    
-    // Use Web Serial API for testing (client-side, not server-side)
-    // This avoids Docker container isolation issues
-    if ('serial' in navigator) {
-        try {
-            // Request the specific port from user
-            const port = await navigator.serial.requestPort();
-            
-            // Try to open it with the specified baud rate
-            await port.open({ baudRate: baudRate });
-            
-            // Success! Port is accessible
-            resultDiv.style.display = 'block';
-            resultDiv.style.color = 'hsl(var(--success))';
-            resultDiv.innerHTML = `<i class="fas fa-check-circle"></i> Successfully opened ${portName} at ${baudRate} baud - Port is accessible!`;
-            updateStatusBadge('serial', 'connected', true);
-            
-            // Close the port
-            await port.close();
-            
-            showSuccess(`Serial port ${portName} is working! You can now save the configuration.`);
-            
-        } catch (error) {
-            resultDiv.style.display = 'block';
-            resultDiv.style.color = 'hsl(var(--destructive))';
-            
-            if (error.name === 'NotFoundError') {
-                resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> No device selected. Please select your device in the browser popup.';
-            } else if (error.name === 'InvalidStateError') {
-                resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> Port is already open in another program. Close other serial programs and try again.';
-            } else if (error.name === 'NetworkError') {
-                resultDiv.innerHTML = `<i class="fas fa-times-circle"></i> Could not open ${portName}. Check Device Manager to verify the port number.`;
-            } else {
-                resultDiv.innerHTML = `<i class="fas fa-times-circle"></i> Error: ${error.message}`;
-            }
-            
-            updateStatusBadge('serial', 'disconnected', false);
-        }
-    } else {
-        // Fallback: Just validate the port format
-        resultDiv.style.display = 'block';
-        
-        // Check if port format looks valid
-        const isWindows = portName.toUpperCase().startsWith('COM');
-        const isLinux = portName.startsWith('/dev/tty');
-        
-        if (isWindows || isLinux) {
-            resultDiv.style.color = 'hsl(var(--warning))';
-            resultDiv.innerHTML = 
-                `<i class="fas fa-exclamation-triangle"></i> ` +
-                `Port format looks correct (${portName}). ` +
-                `Cannot test from browser - will be tested when bridge connects. ` +
-                `<strong>Click Save to apply.</strong>`;
-            updateStatusBadge('serial', 'disconnected', false);
-        } else {
-            resultDiv.style.color = 'hsl(var(--destructive))';
-            resultDiv.innerHTML = 
-                `<i class="fas fa-times-circle"></i> ` +
-                `Invalid port format. Use COM3, COM4 (Windows) or /dev/ttyACM0 (Linux)`;
-            updateStatusBadge('serial', 'disconnected', false);
-        }
-    }
-    
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-plug"></i> Test Serial Connection';
-}
-
-function showPortHelp() {
-    const hint = document.getElementById('port-hint');
-    if (hint.style.display === 'none' || !hint.style.display) {
-        hint.style.display = 'block';
-    } else {
-        hint.style.display = 'none';
     }
 }
 
-async function detectSerialPort() {
-    const input = document.getElementById('serial_port');
-    
-    // Check if Web Serial API is available
-    if (!('serial' in navigator)) {
-        showError(
-            'Web Serial API not available. Please use Chrome or Edge browser, or manually enter your port from Device Manager.'
-        );
-        showPortHelp();  // Show the help guide
-        return;
-    }
-    
+async function scanSerialPorts() {
     try {
-        // Request serial port using Web Serial API
-        // NO FILTERS - show ALL available ports
-        const port = await navigator.serial.requestPort();
+        const response = await fetch('/meshcore/api/scan/serial/');
+        const data = await response.json();
         
-        // Get port info
-        const info = port.getInfo();
+        const select = document.getElementById('serial_port');
+        const currentValue = select.value;
         
-        // Identify device type
-        let deviceType = 'Serial Device';
-        let isRAK4631 = false;
+        select.innerHTML = '<option value="">Select a port...</option>';
         
-        if (info.usbVendorId === 0x1915) {
-            deviceType = 'RAK4631 (Nordic nRF52840)';
-            isRAK4631 = true;
-        } else if (info.usbVendorId === 0x10C4) {
-            deviceType = 'ESP32 (CP210x)';
-        } else if (info.usbVendorId === 0x1A86) {
-            deviceType = 'ESP32 (CH340)';
-        } else if (info.usbVendorId === 0x0403) {
-            deviceType = 'USB Serial (FTDI)';
-        } else if (info.usbVendorId && info.usbProductId) {
-            deviceType = `USB Device (${info.usbVendorId.toString(16)}:${info.usbProductId.toString(16)})`;
-        }
-        
-        // Determine platform
-        const isWindows = navigator.userAgent.includes('Windows');
-        const isMac = navigator.userAgent.includes('Mac');
-        
-        let suggestedPort = '';
-        let helpText = '';
-        
-        if (isWindows) {
-            suggestedPort = 'COM3';  // Most common Windows port
-            helpText = 
-                `Device detected: ${deviceType}${isRAK4631 ? ' ⭐' : ''}\n\n` +
-                `Check Device Manager to find the exact COM port:\n\n` +
-                `1. Press Win + X → Device Manager\n` +
-                `2. Expand "Ports (COM & LPT)"\n` +
-                `3. Find your device (e.g., "USB Serial Device (COM3)")\n` +
-                `4. Enter the COM number below\n\n` +
-                `Common ports: COM3, COM4, COM5\n\n` +
-                `Enter your COM port:`;
-        } else if (isMac) {
-            suggestedPort = '/dev/tty.usbmodem1';
-            helpText = 
-                `Device detected: ${deviceType}${isRAK4631 ? ' ⭐' : ''}\n\n` +
-                `Run this in Terminal to find your port:\n` +
-                `ls /dev/tty.usb*\n\n` +
-                `Common ports:\n` +
-                `/dev/tty.usbmodem*\n` +
-                `/dev/cu.usbserial*\n\n` +
-                `Enter your port:`;
+        if (data.success && data.ports && data.ports.length > 0) {
+            data.ports.forEach(port => {
+                const option = document.createElement('option');
+                option.value = port.device;
+                option.textContent = `${port.device} - ${port.description || 'Unknown'}`;
+                if (port.is_meshcore) {
+                    option.textContent += ' ⭐ MeshCore Device';
+                }
+                select.appendChild(option);
+            });
+            
+            // Restore previous value if it exists
+            if (currentValue) {
+                select.value = currentValue;
+            }
         } else {
-            suggestedPort = '/dev/ttyACM0';
-            helpText = 
-                `Device detected: ${deviceType}${isRAK4631 ? ' ⭐' : ''}\n\n` +
-                `Run this in Terminal to find your port:\n` +
-                `ls /dev/ttyACM* /dev/ttyUSB*\n\n` +
-                `Common ports:\n` +
-                `/dev/ttyACM0 (RAK4631)\n` +
-                `/dev/ttyUSB0 (ESP32)\n\n` +
-                `Enter your port:`;
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No ports found';
+            select.appendChild(option);
         }
-        
-        // Prompt user for exact port name
-        const portInput = prompt(helpText, suggestedPort);
-        
-        if (portInput && portInput.trim()) {
-            input.value = portInput.trim();
-            showSuccess(`Port set to: ${portInput.trim()} - Click "Test" to verify!`);
-        }
-        
     } catch (error) {
-        if (error.name === 'NotFoundError') {
-            // User cancelled - show manual instructions
-            showPortHelp();
-            showError('Device selection cancelled. Use the guide below or manually enter your port.');
-        } else if (error.name === 'SecurityError') {
-            showError('Serial port access denied. Please use Chrome or Edge browser on localhost or HTTPS.');
-        } else if (error.name === 'NotSupportedError') {
-            showError('Web Serial API not supported. Please use Chrome 89+ or Edge 89+, or manually enter your port.');
-            showPortHelp();
-        } else {
-            console.error('Error detecting port:', error);
-            showError('Error detecting device: ' + error.message + '. You can manually enter your COM port.');
-            showPortHelp();
-        }
+        console.error('Error scanning ports:', error);
     }
 }
 
@@ -762,80 +558,6 @@ function showError(message) {
         alert.classList.remove('show');
     }, 5000);
 }
-
-// Live Logs Functions
-let autoRefreshLogs = false;
-let logsRefreshInterval = null;
-
-async function refreshLogs() {
-    try {
-        const response = await fetch('/meshcore/api/bridge/logs/');
-        const data = await response.json();
-        
-        const logsDiv = document.getElementById('bridge-logs');
-        
-        if (data.success && data.logs) {
-            logsDiv.innerHTML = data.logs.split('\n').map(line => {
-                // Color code different log levels
-                if (line.includes('ERROR')) {
-                    return `<div style="color: #ff4444;">${escapeHtml(line)}</div>`;
-                } else if (line.includes('WARNING')) {
-                    return `<div style="color: #ffaa00;">${escapeHtml(line)}</div>`;
-                } else if (line.includes('INFO')) {
-                    return `<div style="color: #00ff00;">${escapeHtml(line)}</div>`;
-                } else if (line.includes('DEBUG')) {
-                    return `<div style="color: #888;">${escapeHtml(line)}</div>`;
-                } else {
-                    return `<div>${escapeHtml(line)}</div>`;
-                }
-            }).join('');
-            
-            // Auto-scroll to bottom
-            logsDiv.scrollTop = logsDiv.scrollHeight;
-        } else {
-            logsDiv.innerHTML = '<div style="color: #888;">No logs available</div>';
-        }
-    } catch (error) {
-        console.error('Error fetching logs:', error);
-        document.getElementById('bridge-logs').innerHTML = 
-            `<div style="color: #ff4444;">Error loading logs: ${escapeHtml(error.message)}</div>`;
-    }
-}
-
-function toggleAutoRefreshLogs() {
-    autoRefreshLogs = !autoRefreshLogs;
-    const icon = document.getElementById('auto-refresh-icon');
-    const text = document.getElementById('auto-refresh-text');
-    
-    if (autoRefreshLogs) {
-        text.textContent = 'Auto-Refresh ON';
-        icon.classList.add('fa-spin');
-        logsRefreshInterval = setInterval(refreshLogs, 2000);  // Refresh every 2 seconds
-        refreshLogs();  // Immediate refresh
-    } else {
-        text.textContent = 'Enable Auto-Refresh';
-        icon.classList.remove('fa-spin');
-        if (logsRefreshInterval) {
-            clearInterval(logsRefreshInterval);
-            logsRefreshInterval = null;
-        }
-    }
-}
-
-function clearLogsDisplay() {
-    document.getElementById('bridge-logs').innerHTML = '<div style="color: #888;">Logs cleared. Click "Refresh" to reload.</div>';
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// Load logs on page load
-document.addEventListener('DOMContentLoaded', function() {
-    refreshLogs();
-});
 </script>
 
 {% endblock %}

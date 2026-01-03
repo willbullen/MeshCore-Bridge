@@ -194,13 +194,26 @@ def save_configuration(request):
     """
     Save bridge configuration to database
     """
+    import pathlib
+    log_path = pathlib.Path(r'c:\Users\Natasha\OneDrive - enviroscanmedia.com\Documents\GitHub\MeshCore-Mobile\.cursor\debug.log')
+    
     try:
         data = json.loads(request.body)
+        
+        # #region agent log
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"location":"views_config.py:save_configuration:entry","message":"API received request","data":{"body_keys":list(data.keys()),"serial_port_in_request":data.get('serial_port'),"serial_enabled_in_request":data.get('serial_enabled')},"timestamp":int(timezone.now().timestamp()*1000),"sessionId":"debug-session","hypothesisId":"H2"}) + '\n')
+        # #endregion
         
         # Get or create configuration
         config = BridgeConfiguration.objects.first()
         if not config:
             config = BridgeConfiguration.objects.create()
+        
+        # #region agent log
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"location":"views_config.py:save_configuration:before_save","message":"Before setting fields","data":{"config_id":config.id,"old_serial_port":config.serial_port,"old_serial_enabled":config.serial_enabled},"timestamp":int(timezone.now().timestamp()*1000),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
+        # #endregion
         
         # Update MQTT settings
         config.mqtt_broker = data.get('mqtt_broker', '').strip()
@@ -215,12 +228,23 @@ def save_configuration(request):
         config.serial_baud = int(data.get('serial_baud', 115200))
         config.serial_enabled = data.get('serial_enabled', False)
         
+        # #region agent log
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"location":"views_config.py:save_configuration:after_assignment","message":"After field assignment","data":{"config_serial_port":config.serial_port,"config_serial_enabled":config.serial_enabled,"config_serial_baud":config.serial_baud},"timestamp":int(timezone.now().timestamp()*1000),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
+        # #endregion
+        
         # Update behavior settings
         config.auto_acknowledge = data.get('auto_acknowledge', True)
         config.store_packets = data.get('store_packets', True)
         config.forward_to_mqtt = data.get('forward_to_mqtt', True)
         
         config.save()
+        
+        # #region agent log
+        config.refresh_from_db()
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"location":"views_config.py:save_configuration:after_save","message":"After database save","data":{"saved_serial_port":config.serial_port,"saved_serial_enabled":config.serial_enabled,"config_updated_at":str(config.updated_at)},"timestamp":int(timezone.now().timestamp()*1000),"sessionId":"debug-session","hypothesisId":"H4"}) + '\n')
+        # #endregion
         
         return JsonResponse({
             'success': True,
@@ -305,3 +329,45 @@ def reload_bridge_config(request):
     except Exception as e:
         logger.error(f'Error reloading bridge config: {e}', exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)})
+
+
+@require_http_methods(['GET'])
+def get_bridge_logs(request):
+    """
+    Get recent bridge logs
+    """
+    try:
+        import subprocess
+        
+        # Get logs from bridge container
+        result = subprocess.run(
+            ['docker', 'logs', '--tail', '50', 'meshcore-bridge'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        logs = result.stdout + result.stderr
+        
+        return JsonResponse({
+            'success': True,
+            'logs': logs
+        })
+    
+    except subprocess.TimeoutExpired:
+        return JsonResponse({
+            'success': False,
+            'error': 'Timeout getting logs'
+        })
+    except FileNotFoundError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Docker command not found. Logs unavailable from web interface.'
+        })
+    except Exception as e:
+        logger.error(f'Error getting bridge logs: {e}', exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'logs': 'Error fetching logs. Check docker logs meshcore-bridge manually.'
+        })
